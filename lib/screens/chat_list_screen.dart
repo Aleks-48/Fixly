@@ -74,17 +74,27 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildChatTab(bool isDark) {
+Widget _buildChatTab(bool isDark) {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase.from('tasks').stream(primaryKey: ['id']).eq('is_deleted', false).order('created_at', ascending: false),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
+        final myId = supabase.auth.currentUser?.id;
         final tasks = snapshot.data!.where((t) {
-          final myId = supabase.auth.currentUser?.id;
-          final bool isParticipant = t['user_id'] == myId || t['client_id'] == myId || t['master_id'] == myId;
-          final bool matchesSearch = _searchQuery.isEmpty || (t['title']?.toString().toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
-          return isParticipant && matchesSearch && !_localHiddenIds.contains(t['id'].toString());
+          // Условие 1: Я создатель или заказчик
+          final bool isOwner = t['user_id'] == myId || t['client_id'] == myId;
+          
+          // Условие 2: Я был назначен мастером (даже если заказ завершен)
+          final bool wasMaster = t['master_id'] == myId;
+          
+          // Условие 3: Поиск
+          final bool matchesSearch = _searchQuery.isEmpty || 
+              (t['title']?.toString().toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
+          
+          // ВАЖНО: Разрешаем видеть чат, если ты участник (владелец или мастер) 
+          // И заказ НЕ скрыт локально. Статус больше не влияет на видимость!
+          return (isOwner || wasMaster) && matchesSearch && !_localHiddenIds.contains(t['id'].toString());
         }).toList();
 
         return ListView.builder(
@@ -113,7 +123,6 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
     );
   }
 
-  // --- Вспомогательные методы (твои) ---
   Widget _buildAITile(BuildContext context, bool isDark) => Container(margin: const EdgeInsets.only(bottom: 12), child: InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AIChatScreen())), borderRadius: BorderRadius.circular(28), child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(gradient: LinearGradient(colors: isDark ? [const Color(0xFF2E1A47), const Color(0xFF1A1A1C)] : [const Color(0xFFF3E5F5), Colors.white]), borderRadius: BorderRadius.circular(28)), child: Row(children: [Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF9C27B0), Color(0xFF4A148C)]), borderRadius: BorderRadius.circular(20)), child: const Icon(LucideIcons.sparkles, color: Colors.white)), const SizedBox(width: 16), const Text('Fixly AI Помощник', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17))]))));
 
   Widget _buildPremiumTile(BuildContext context, Map<String, dynamic> task, bool isDark) {
@@ -133,7 +142,6 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
   Widget _buildDismissBackground() => Container(margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(28)), alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 25), child: const Icon(LucideIcons.trash2, color: Colors.white));
 }
 
-// Делегат для работы поиска
 class ChatSearchDelegate extends SearchDelegate<String> {
   @override
   List<Widget> buildActions(BuildContext context) => [IconButton(icon: const Icon(Icons.clear), onPressed: () => query = "")];

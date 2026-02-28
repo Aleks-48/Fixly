@@ -1,19 +1,15 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:fixly_app/main.dart';
 
 class EditProfilePage extends StatefulWidget {
   final String initialName;
   final String initialBin;
-  final String? initialAvatarUrl;
 
   const EditProfilePage({
     super.key, 
     required this.initialName, 
-    required this.initialBin,
-    this.initialAvatarUrl,
+    required this.initialBin
   });
 
   @override
@@ -24,16 +20,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _binController;
-  String? _avatarUrl;
   bool _isSaving = false;
-  File? _imageFile;
 
   @override
   void initState() {
     super.initState();
+    // Инициализируем контроллеры переданными данными
     _nameController = TextEditingController(text: widget.initialName);
     _binController = TextEditingController(text: widget.initialBin);
-    _avatarUrl = widget.initialAvatarUrl;
   }
 
   @override
@@ -43,21 +37,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
     super.dispose();
   }
 
-  Future<void> _pickImage() async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-      
-      if (image != null) {
-        setState(() => _imageFile = File(image.path));
-      }
-    } catch (e) {
-      debugPrint("Ошибка выбора фото: $e");
-      _showMsg("Не удалось выбрать фото", isError: true);
-    }
-  }
-
   Future<void> _saveProfile() async {
+    // 1. Валидация формы
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSaving = true);
@@ -65,40 +46,35 @@ class _EditProfilePageState extends State<EditProfilePage> {
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
 
-    if (user == null) return;
+    // Проверка на случай, если сессия истекла
+    if (user == null) {
+      _showMsg("Пользователь не найден. Перезайдите в приложение", isError: true);
+      setState(() => _isSaving = false);
+      return;
+    }
 
     try {
-      String? uploadedUrl = _avatarUrl;
-
-      // Загрузка аватарки
-      if (_imageFile != null) {
-        final fileName = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.png';
-        await supabase.storage.from('avatars').uploadBinary(
-          fileName,
-          await _imageFile!.readAsBytes(),
-          fileOptions: const FileOptions(upsert: true),
-        );
-        uploadedUrl = supabase.storage.from('avatars').getPublicUrl(fileName);
-      }
-
+      // ВАЖНО: Проверь имена колонок в своей таблице 'profiles' в Supabase!
+      // Если колонки называются по-другому (например full_name), измени тут:
       await supabase.from('profiles').update({
         'name': _nameController.text.trim(), 
         'bin': _binController.text.trim(),
-        'avatar_url': uploadedUrl,
-        'updated_at': DateTime.now().toIso8601String(),
+        'updated_at': DateTime.now().toIso8601String(), // Хорошим тоном считается обновлять дату
       }).eq('id', user.id);
 
       if (mounted) {
+        // Возвращаем данные назад в ProfilePage, чтобы она сразу обновилась без перезагрузки
         Navigator.pop(context, {
           'name': _nameController.text.trim(),
           'bin': _binController.text.trim(),
-          'avatar_url': uploadedUrl,
         }); 
         _showMsg("Данные успешно сохранены");
       }
     } catch (e) {
-      debugPrint("❌ Ошибка: $e");
-      if (mounted) _showMsg("Ошибка сохранения: проверьте доступ к Storage", isError: true);
+      debugPrint("❌ Ошибка сохранения в Supabase: $e");
+      if (mounted) {
+        _showMsg("Ошибка сохранения: проверьте интернет или структуру базы", isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -122,6 +98,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         return Scaffold(
           appBar: AppBar(
             title: Text(lang == 'ru' ? "Редактирование" : "Өңдеу"),
+            elevation: 0,
             actions: [
               if (_isSaving)
                 const Padding(
@@ -140,36 +117,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               children: [
-                // Визуальная область для аватарки
-                Center(
-                  child: InkWell(
-                    onTap: _pickImage,
-                    borderRadius: BorderRadius.circular(50),
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 50,
-                          backgroundColor: Colors.grey[200],
-                          backgroundImage: _imageFile != null 
-                              ? FileImage(_imageFile!) as ImageProvider
-                              : (_avatarUrl != null && _avatarUrl!.isNotEmpty ? NetworkImage(_avatarUrl!) : null),
-                          child: _imageFile == null && (_avatarUrl == null || _avatarUrl!.isEmpty)
-                              ? const Icon(Icons.camera_alt, size: 40, color: Colors.grey) 
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0, right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
-                            child: const Icon(Icons.edit, size: 18, color: Colors.white),
-                          ),
-                        )
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 30),
                 _buildField(
                   controller: _nameController,
                   label: lang == 'ru' ? "ФИО или Название" : "Аты-жөні немесе атауы",
@@ -186,9 +133,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   keyboardType: TextInputType.number,
                   maxLength: 12,
                   validator: (v) {
-                    if (v != null && v.isNotEmpty && v.length != 12) return "БИН должен содержать 12 цифр";
+                    if (v == null || v.isEmpty) return null; // БИН может быть необязательным
+                    if (v.length != 12) return "БИН должен содержать 12 цифр";
+                    if (int.tryParse(v) == null) return "Только цифры";
                     return null;
                   },
+                ),
+                const SizedBox(height: 40),
+                Text(
+                  lang == 'ru' 
+                    ? "Убедитесь, что данные верны. БИН используется для верификации ваших услуг." 
+                    : "Мәліметтердің дұрыстығын тексеріңіз. БСН қызметтерді растау үшін қолданылады.",
+                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -219,13 +176,26 @@ class _EditProfilePageState extends State<EditProfilePage> {
           keyboardType: keyboardType,
           maxLength: maxLength,
           validator: validator,
+          style: const TextStyle(fontSize: 16),
           decoration: InputDecoration(
             hintText: hint,
             prefixIcon: Icon(icon, color: Colors.blueAccent),
-            counterText: "",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            counterText: "", // Скрываем стандартный счетчик символов
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+            ),
             filled: true,
             fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(vertical: 16),
           ),
         ),
       ],

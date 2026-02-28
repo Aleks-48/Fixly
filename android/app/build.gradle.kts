@@ -6,7 +6,8 @@ plugins {
 }
 
 android {
-    namespace = "com.example.fixly_app"
+    // Убедись, что этот namespace совпадает с твоим фактическим пакетом
+    namespace = "com.example.fixly_app" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,11 +21,13 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Твой уникальный ID приложения
         applicationId = "com.example.fixly_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+
+        // ВНИМАНИЕ: Jitsi требует минимум 26. 
+        // Если оставить flutter.minSdkVersion, будет ошибка сборки.
+        minSdk = 26 
+        
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -32,13 +35,32 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Конфигурация подписи для релизной сборки
             signingConfig = signingConfigs.getByName("debug")
+            
+            // Оптимизация (по желанию можно включить minifyEnabled true)
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    // Важно для Jitsi и некоторых других библиотек
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Здесь можно добавлять нативные зависимости, если нужно
 }

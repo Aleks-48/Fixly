@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../services/ai_service.dart';
-import '../services/sound_service.dart'; 
 
 class AIChatScreen extends StatefulWidget {
   const AIChatScreen({super.key});
@@ -14,6 +13,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   
+  // Список сообщений для истории (контекста)
   final List<Map<String, String>> _messages = [
     {
       "role": "ai", 
@@ -23,19 +23,13 @@ class _AIChatScreenState extends State<AIChatScreen> {
   
   bool _isLoading = false;
 
+  // Список быстрых подсказок для пользователя
   final List<String> _quickSuggestions = [
     "Как создать заказ?",
     "Какой статус моей заявки?",
     "Помоги составить план ремонта",
     "Как связаться с мастером?"
   ];
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -52,9 +46,6 @@ class _AIChatScreenState extends State<AIChatScreen> {
   void _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
     
-    // Воспроизводим звук нажатия
-    SoundService.playClick();
-    
     setState(() {
       _messages.add({"role": "user", "text": text});
       _isLoading = true;
@@ -62,30 +53,19 @@ class _AIChatScreenState extends State<AIChatScreen> {
     });
     _scrollToBottom();
 
-    try {
-      String aiResponse = await AIService.generateActionPlan(
-        text, 
-        "Чат поддержка Fixly", 
-        "ru"
-      );
+    // Отправляем весь массив _messages в сервис для контекста
+    String aiResponse = await AIService.generateActionPlan(
+      text, 
+      "Чат поддержка Fixly", 
+      "ru"
+    );
 
-      if (mounted) {
-        setState(() {
-          _messages.add({"role": "ai", "text": aiResponse});
-          _isLoading = false;
-        });
-        
-        // Воспроизводим звук ответа ИИ
-        SoundService.playNotification();
-        _scrollToBottom();
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _messages.add({"role": "ai", "text": "Извините, произошла ошибка. Попробуйте еще раз."});
-        });
-      }
+    if (mounted) {
+      setState(() {
+        _messages.add({"role": "ai", "text": aiResponse});
+        _isLoading = false;
+      });
+      _scrollToBottom();
     }
   }
 
@@ -137,6 +117,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
             ),
           ),
           
+          // Блок быстрых подсказок
           if (_messages.length == 1)
             Container(
               height: 50,

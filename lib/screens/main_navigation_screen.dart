@@ -1,141 +1,100 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'orders_page.dart';
+import 'chat_list_screen.dart';
+import 'profile_page.dart';
+import 'create_order_page.dart';
+import 'my_work_screen.dart';
 
-class ChairmanAnalyticsScreen extends StatelessWidget {
-  const ChairmanAnalyticsScreen({super.key});
+class MainNavigationScreen extends StatefulWidget {
+  const MainNavigationScreen({super.key});
+
+  @override
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+}
+
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _currentIndex = 0;
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final List<Widget> pages = [
+      OrdersPage(),
+      ChatListScreen(),
+      MyWorkScreen(),
+      ProfilePage(),
+    ];
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Аналитика дома", style: TextStyle(fontWeight: FontWeight.bold)),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
+      // ExtendBody позволяет контенту прокручиваться под BottomAppBar, 
+      // но мы добавили SizedBox(120) в профиле, так что всё будет ок.
+      extendBody: true, 
+      body: IndexedStack(
+        index: _currentIndex,
+        children: pages,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 1. Главная карточка расходов
-            _buildTotalSpentCard(),
-            
-            const SizedBox(height: 20),
-            
-            // 2. Блок здоровья дома
-            const Text("Состояние дома", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            _buildHealthCard(),
 
-            const SizedBox(height: 20),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // Если кнопка не работает, убедись, что CreateOrderPage не пустой файл
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const CreateOrderPage()),
+          );
+        },
+        backgroundColor: Colors.blueAccent,
+        shape: const CircleBorder(),
+        elevation: 8, // Чуть больше тени для объема
+        child: const Icon(LucideIcons.plus, color: Colors.white, size: 35),
+      ),
 
-            // 3. Блок AI рекомендаций
-            const Text("Рекомендации ИИ", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            _buildRecommendationItem(
-              title: "Плановый осмотр",
-              subtitle: "Затраты на сантехнику выросли. Рекомендуем осмотр труб.",
-              icon: LucideIcons.alertTriangle,
-              color: Colors.orange,
-            ),
-          ],
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+
+      bottomNavigationBar: BottomAppBar(
+        color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 10.0, // Увеличил зазор, чтобы кнопка не "залипала"
+        child: SizedBox(
+          height: 65,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(icon: LucideIcons.briefcase, label: 'Заявки', index: 0),
+              _buildNavItem(icon: LucideIcons.messageCircle, label: 'Чаты', index: 1),
+              const SizedBox(width: 48), // Место для "+"
+              _buildNavItem(icon: LucideIcons.layoutGrid, label: 'Мои дела', index: 2),
+              _buildNavItem(icon: LucideIcons.user, label: 'Профиль', index: 3),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildTotalSpentCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blueAccent, Colors.blue.shade800],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 8))],
-      ),
+  Widget _buildNavItem({required IconData icon, required String label, required int index}) {
+    final isSelected = _currentIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _currentIndex = index),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text("Потрачено на ремонт", style: TextStyle(color: Colors.white70, fontSize: 14)),
-          const SizedBox(height: 8),
-          const Text("125 450 ₸", style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _miniStat("12", "Заявок"),
-              const SizedBox(width: 20),
-              _miniStat("2", "В работе"),
-            ],
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _miniStat(String val, String label) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-      Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10)),
-    ],
-  );
-
-  Widget _buildHealthCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Общий индекс", style: TextStyle(fontWeight: FontWeight.w600)),
-              Text("78%", style: TextStyle(color: Colors.greenAccent.shade400, fontWeight: FontWeight.bold)),
-            ],
+          Icon(
+            icon,
+            color: isSelected ? Colors.blueAccent : Colors.grey,
+            size: 24,
           ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: const LinearProgressIndicator(
-              value: 0.78,
-              minHeight: 8,
-              backgroundColor: Colors.white10,
-              valueColor: AlwaysStoppedAnimation(Colors.greenAccent),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.blueAccent : Colors.grey,
+              fontSize: 10,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecommendationItem({required String title, required String subtitle, required IconData icon, required Color color}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
-                Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
-            ),
-          )
         ],
       ),
     );

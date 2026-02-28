@@ -26,33 +26,16 @@ class _CallScreenState extends State<CallScreen> {
   final supabase = Supabase.instance.client;
   bool _isConnecting = false;
 
-  // Очищаем ID для Jitsi, чтобы избежать ошибок с спецсимволами
-  String get cleanRoomId => widget.taskId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
-
   @override
   void initState() {
     super.initState();
-    SoundService.playRinging();
-    _notifyReceiver(); // Уведомляем базу о начале вызова
+    SoundService.playRinging(); // Запускаем звук вызова
   }
 
   @override
   void dispose() {
-    SoundService.stopRinging();
+    SoundService.stopRinging(); // Обязательно останавливаем при выходе
     super.dispose();
-  }
-
-  // Метод для отправки сигнала в Supabase (чтобы у второго человека пошел вызов)
-  Future<void> _notifyReceiver() async {
-    try {
-      await supabase.from('calls').insert({
-        'room_id': cleanRoomId,
-        'caller_id': supabase.auth.currentUser!.id,
-        'status': 'ringing',
-      });
-    } catch (e) {
-      debugPrint("Ошибка отправки сигнала вызова: $e");
-    }
   }
 
   void _startCall() async {
@@ -60,7 +43,7 @@ class _CallScreenState extends State<CallScreen> {
     final user = supabase.auth.currentUser;
 
     var options = JitsiMeetConferenceOptions(
-      room: cleanRoomId, // Используем чистый ID
+      room: "fixly_room_${widget.taskId}",
       configOverrides: {
         "startWithAudioMuted": false,
         "startWithVideoMuted": !widget.hasVideo,
@@ -70,10 +53,9 @@ class _CallScreenState extends State<CallScreen> {
       featureFlags: {
         "unsecureRoomNameChecksEnabled": true,
         "videoMuteButtonEnabled": true,
-        "inviteEnabled": false,
       },
       userInfo: JitsiMeetUserInfo(
-        displayName: user?.userMetadata?['username'] ?? "Пользователь",
+        displayName: user?.email ?? "Пользователь",
         email: user?.email,
       ),
     );
@@ -81,7 +63,6 @@ class _CallScreenState extends State<CallScreen> {
     var listener = JitsiMeetEventListener(
       conferenceJoined: (url) {
         SoundService.stopRinging();
-        setState(() => _isConnecting = false);
       },
       conferenceTerminated: (url, error) {
         SoundService.stopRinging();
@@ -107,22 +88,25 @@ class _CallScreenState extends State<CallScreen> {
         child: Column(
           children: [
             const Spacer(flex: 2),
+            // Аватарка
             CircleAvatar(
               radius: 60,
               backgroundImage: NetworkImage(widget.avatarUrl),
               backgroundColor: Colors.white10,
             ),
             const SizedBox(height: 24),
+            // Имя
             Text(
               widget.userName,
               style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              _isConnecting ? "Соединение..." : "Нажмите кнопку вызова",
+              _isConnecting ? "Соединение..." : "Готов к вызову",
               style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 16),
             ),
             const Spacer(flex: 3),
+            // Панель управления
             Padding(
               padding: const EdgeInsets.only(bottom: 50),
               child: Row(
