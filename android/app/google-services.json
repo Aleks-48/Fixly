@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "700103731510",
+    "project_id": "fixly-chat",
+    "storage_bucket": "fixly-chat.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700103731510:android:130be515b1e684eea6eb97",
+        "android_client_info": {
+          "package_name": "com.example.fixly_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBe0dYZiPz93mMBW-RcObgsUzbZuhgOqz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

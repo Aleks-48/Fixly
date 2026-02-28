@@ -1,0 +1,6 @@
+-keep class org.jitsi.meet.sdk.** { *; }
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.soloader.** { *; }
+-keep class com.oney.WebRTCModule.** { *; }
+-dontwarn com.facebook.react.**
+-dontwarn org.jitsi.meet.sdk.**
