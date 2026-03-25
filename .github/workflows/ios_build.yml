@@ -22,13 +22,14 @@ jobs:
 
       - name: Prepare iOS and Patch
         run: |
-          # 1. Создаем структуру iOS-проекта (флаг --no-pub предотвращает запуск подтягивания плагинов на этом этапе)
-          flutter create . --platforms=ios --no-pub
+          # 1. Создаем структуру iOS-проекта
+          flutter create . --platforms=ios
           
-          # 2. Создаем папку Flutter вручную (это предотвратит ошибки путей в Podfile)
-          mkdir -p ios/Flutter
+          # 2. Генерируем служебные файлы (ios/Flutter), чтобы Podfile их увидел.
+          # Используем --config-only, чтобы не запускать полную сборку сейчас.
+          flutter build ios --config-only --no-codesign
           
-          # 3. ПРИНУДИТЕЛЬНО создаем правильный Podfile с версией 15.0 ДО того, как Flutter его тронет
+          # 3. Теперь, когда файлы созданы, ПЕРЕЗАПИСЫВАЕМ Podfile
           cat << EOF > ios/Podfile
           platform :ios, '15.0'
 
@@ -45,35 +46,32 @@ jobs:
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
-                # Гарантируем 15.0 для Firebase и других плагинов
+                # Форсируем iOS 15.0 для всех зависимостей (нужно для Firebase)
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
               end
             end
           end
           EOF
 
-          # 4. Генерируем служебные файлы Flutter (теперь они подхватят наш Podfile)
-          # Используем флаг --no-codesign, чтобы не требовать сертификаты
-          flutter build ios --config-only --no-codesign
-
-          # 5. Правим версию iOS в конфигурации самого проекта Xcode (Runner.xcodeproj)
+          # 4. Правим версию в самом проекте Xcode (Runner)
           find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
 
-          # 6. Устанавливаем поды вручную
+          # 5. Устанавливаем поды вручную
           cd ios
           pod install --repo-update
           cd ..
 
       - name: Build iOS
         run: |
-          # Собираем приложение окончательно
+          # Собираем финальный билд. Флаг --no-pub сохранит наши настройки.
           flutter build ios --release --no-codesign --no-pub
 
       - name: Create IPA
         run: |
           mkdir -p Payload
-          APP_PATH=\$(find build/ios/iphoneos -name "*.app" | head -n 1)
-          cp -r "\$APP_PATH" Payload/
+          # Находим путь к .app файлу
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
           zip -r app.ipa Payload
 
       - name: Upload IPA
