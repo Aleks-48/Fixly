@@ -25,15 +25,14 @@ jobs:
           # 1. Создаем структуру проекта для iOS
           flutter create . --platforms=ios
           
-          # 2. Подтягиваем плагины во внутренние конфиги Flutter
+          # 2. Подтягиваем зависимости
           flutter pub get
           
-          # 3. Генерируем служебные файлы (ios/Flutter/generated_podhelpers.rb)
-          # Мы используем --no-codesign и игнорируем ошибки, нам нужны только файлы
-          flutter build ios --config-only --no-codesign || true
+          # 3. Создаем папку Flutter вручную (нужно для создания Podfile)
+          mkdir -p ios/Flutter
           
-          # 4. Принудительно создаем правильный Podfile (iOS 15.0)
-          # Важно: ставим platform :ios, '15.0' в самом начале
+          # 4. СРАЗУ создаем правильный Podfile (iOS 15.0)
+          # Это предотвратит ошибки при последующих вызовах flutter build
           cat << EOF > ios/Podfile
           platform :ios, '15.0'
 
@@ -50,17 +49,20 @@ jobs:
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
               target.build_configurations.each do |config|
-                # Форсируем 15.0 для всех зависимостей (нужно для Firebase)
+                # Форсируем 15.0 для Firebase
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
               end
             end
           end
           EOF
 
-          # 5. Прописываем версию 15.0 в самом проекте Xcode (внутри pbxproj)
+          # 5. Генерируем служебные файлы (теперь Podfile уже правильный)
+          flutter build ios --config-only --no-codesign || true
+          
+          # 6. Прописываем версию 15.0 в самом проекте Xcode
           find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
 
-          # 6. Устанавливаем поды вручную через CocoaPods
+          # 7. Финальная установка подов
           cd ios
           rm -rf Pods
           rm -rf Podfile.lock
@@ -69,8 +71,7 @@ jobs:
 
       - name: Build iOS Release
         run: |
-          # Собираем финальный билд. 
-          # --no-pub критически важен, чтобы Flutter не сбросил наши правки в Podfile
+          # --no-pub не дает Flutter перезаписать наш Podfile
           flutter build ios --release --no-codesign --no-pub
 
       - name: Create IPA
