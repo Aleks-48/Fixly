@@ -20,23 +20,45 @@ jobs:
 
       - name: Prepare iOS and Patch
         run: |
-          # 1. Сначала скачиваем зависимости Flutter
+          # 1. Загружаем пакеты
           flutter pub get
           
-          # 2. РЕШАЕМ КОСЯК: Создаем папку и файл-заглушку вручную
-          # Это нужно, чтобы CocoaPods не падал при чтении Podfile
+          # 2. УСТРАНЯЕМ ОШИБКУ "cannot load such file"
+          # Создаем папку и файл-заглушку с пустыми функциями, чтобы Podfile не "падал" при чтении
           mkdir -p ios/Flutter
-          touch ios/Flutter/generated_podhelpers.rb
+          echo "def flutter_install_all_ios_pods(path); end" > ios/Flutter/generated_podhelpers.rb
+          echo "def flutter_additional_ios_build_settings(target); end" >> ios/Flutter/generated_podhelpers.rb
           
-          # 3. Принудительно генерируем правильные файлы конфигурации Flutter
-          # Эта команда перезапишет нашу заглушку реальным содержимым
+          # 3. Теперь запускаем конфигурацию Flutter. 
+          # Теперь он увидит, что файл есть, и просто ПЕРЕЗАПИШЕТ его правильным содержимым.
           flutter build ios --config-only --no-codesign
           
-          # 4. Исправляем версию iOS до 15.0 в проекте и Podfile
-          find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
-          
-          sed -i '' "s/^# *platform :ios.*/platform :ios, '15.0'/" ios/Podfile
-          sed -i '' "s/^platform :ios.*/platform :ios, '15.0'/" ios/Podfile
+          # 4. Патчим версию iOS на 15.0 (чтобы не было ошибок с Firebase/другими модами)
+          python3 - << 'EOF'
+          import re
+          import os
+
+          def patch_file(path, pattern, replacement):
+              if os.path.exists(path):
+                  with open(path, 'r') as f: content = f.read()
+                  new_content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+                  with open(path, 'w') as f: f.write(new_content)
+
+          # Исправляем проект Xcode
+          patch_file('ios/Runner.xcodeproj/project.pbxproj', 
+                     r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;', 
+                     'IPHONEOS_DEPLOYMENT_TARGET = 15.0;')
+
+          # Исправляем Podfile
+          patch_file('ios/Podfile', 
+                     r'^#? ?platform :ios.*', 
+                     "platform :ios, '15.0'")
+          EOF
+
+          # 5. Принудительно устанавливаем поды
+          cd ios
+          pod install --repo-update
+          cd ..
 
       - name: Build iOS Release
         # Теперь Flutter сам вызовет pod install, и у него будут все нужные файлы и правильная версия!
