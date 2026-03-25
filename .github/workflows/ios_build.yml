@@ -20,42 +20,40 @@ jobs:
 
       - name: Prepare iOS and Patch
         run: |
-          # 1. Загружаем пакеты
+          # 1. Загружаем зависимости Flutter
           flutter pub get
           
-          # 2. УСТРАНЯЕМ ОШИБКУ "cannot load such file"
-          # Создаем папку и файл-заглушку с пустыми функциями, чтобы Podfile не "падал" при чтении
+          # 2. ИСПРАВЛЕНИЕ ОШИБКИ: Создаем папку и "файл-обманку"
+          # Это нужно, чтобы Ruby (Podfile) нашел файл и функции, даже если они пока пустые
           mkdir -p ios/Flutter
           echo "def flutter_install_all_ios_pods(path); end" > ios/Flutter/generated_podhelpers.rb
           echo "def flutter_additional_ios_build_settings(target); end" >> ios/Flutter/generated_podhelpers.rb
           
-          # 3. Теперь запускаем конфигурацию Flutter. 
-          # Теперь он увидит, что файл есть, и просто ПЕРЕЗАПИШЕТ его правильным содержимым.
+          # 3. Генерируем реальные файлы конфигурации
+          # Flutter увидит нашу заглушку и ПЕРЕЗАПИШЕТ её правильным рабочим кодом
           flutter build ios --config-only --no-codesign
           
-          # 4. Патчим версию iOS на 15.0 (чтобы не было ошибок с Firebase/другими модами)
+          # 4. Патчим версию iOS до 15.0 везде, где это нужно
           python3 - << 'EOF'
           import re
           import os
 
-          def patch_file(path, pattern, replacement):
-              if os.path.exists(path):
-                  with open(path, 'r') as f: content = f.read()
-                  new_content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
-                  with open(path, 'w') as f: f.write(new_content)
-
           # Исправляем проект Xcode
-          patch_file('ios/Runner.xcodeproj/project.pbxproj', 
-                     r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;', 
-                     'IPHONEOS_DEPLOYMENT_TARGET = 15.0;')
+          pbx_path = 'ios/Runner.xcodeproj/project.pbxproj'
+          if os.path.exists(pbx_path):
+              with open(pbx_path, 'r') as f: pbx = f.read()
+              pbx = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.0;', pbx)
+              with open(pbx_path, 'w') as f: f.write(pbx)
 
-          # Исправляем Podfile
-          patch_file('ios/Podfile', 
-                     r'^#? ?platform :ios.*', 
-                     "platform :ios, '15.0'")
+          # Исправляем Podfile (ставим платформу 15.0)
+          pod_path = 'ios/Podfile'
+          if os.path.exists(pod_path):
+              with open(pod_path, 'r') as f: pod = f.read()
+              pod = re.sub(r'^#? ?platform :ios.*', "platform :ios, '15.0'", pod, flags=re.MULTILINE)
+              with open(pod_path, 'w') as f: f.write(pod)
           EOF
 
-          # 5. Принудительно устанавливаем поды
+          # 5. Устанавливаем поды (теперь все файлы на месте)
           cd ios
           pod install --repo-update
           cd ..
