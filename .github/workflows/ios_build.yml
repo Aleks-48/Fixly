@@ -18,24 +18,23 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Generate iOS files safely
-        # Секретная команда: она воссоздает системные файлы Apple и Podfile,
-        # но при этом НЕ запускает pod install, поэтому не падает из-за Firebase!
+      - name: Generate iOS Structure
         run: flutter create . --platforms=ios
 
-      - name: Patch Podfile for iOS 15
+      - name: Overwrite Podfile with Correct Config
         run: |
-          cd ios
-          # Теперь спокойно ищем файл и меняем версии на 15.0
-          sed -i '' "s/platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
-          sed -i '' "s/platform :ios, '12.0'/platform :ios, '15.0'/g" Podfile
-          sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
-          sed -i '' "s/# platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
-          sed -i '' "s/# platform :ios, '12.0'/platform :ios, '15.0'/g" Podfile
-          sed -i '' "s/# platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
-          
-          # Заставляем абсолютно все плагины (включая Firebase) использовать iOS 15.0
-          echo "
+          cat << EOF > ios/Podfile
+          platform :ios, '15.0'
+
+          load File.join(File.dirname(File.realpath(__FILE__)), '..', 'Flutter', 'podhelper.rb')
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
+
           post_install do |installer|
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
@@ -43,18 +42,17 @@ jobs:
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
               end
             end
-          end" >> Podfile
-          cd ..
+          end
+          EOF
 
       - name: Build iOS
-        # И только теперь, когда Podfile ИДЕАЛЬНЫЙ, запускаем настоящую сборку
         run: flutter build ios --release --no-codesign
 
       - name: Create IPA
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
-          cp -r "$APP_PATH" Payload/
+          APP_PATH=\$(find build/ios/iphoneos -name "*.app" | head -n 1)
+          cp -r "\$APP_PATH" Payload/
           zip -r app.ipa Payload
 
       - name: Upload IPA
