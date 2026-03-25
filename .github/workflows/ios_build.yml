@@ -16,61 +16,47 @@ jobs:
           channel: 'stable'
 
       - name: Install Dependencies
-        run: |
-          flutter pub get
-          flutter precache --ios
+        run: flutter pub get
 
-      - name: Prepare iOS and Patch
+      - name: Patch iOS Versions (Python)
         run: |
-          # 1. УДАЛЯЕМ СТАРЫЙ PODFILE СРАЗУ ЖЕ!
-          # Это не даст Flutter'у упасть при первичной настройке
-          rm -f ios/Podfile
-          rm -f ios/Podfile.lock
-          
-          # 2. Инициализируем проект и скачиваем пакеты
-          flutter create . --platforms=ios
-          flutter pub get
-          
-          # 3. Генерируем служебные файлы (включая тот самый generated_podhelpers.rb)
-          # Так как старого Podfile больше нет, Flutter создаст стандартный и пройдет этот шаг без ошибок!
-          flutter build ios --config-only --no-codesign
-          
-          # 4. ТЕПЕРЬ, когда файл generated_podhelpers.rb 100% существует, создаем наш Podfile с iOS 15.0
-          cat << EOF > ios/Podfile
-          platform :ios, '15.0'
-          
-          load File.join(File.dirname(File.realpath(__FILE__)), 'Flutter', 'generated_podhelpers.rb')
-          
-          target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
-          
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
-          
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
-              flutter_additional_ios_build_settings(target)
-              target.build_configurations.each do |config|
-                # Форсируем 15.0
-                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-              end
-            end
-          end
+          # Используем Python для аккуратной замены текста в файлах, не ломая структуру Flutter
+          cat << 'EOF' > patch_ios.py
+          import re
+          import os
+
+          # 1. Меняем версию в настройках Xcode
+          pbx_path = 'ios/Runner.xcodeproj/project.pbxproj'
+          if os.path.exists(pbx_path):
+              with open(pbx_path, 'r') as f: pbx = f.read()
+              pbx = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.0;', pbx)
+              with open(pbx_path, 'w') as f: f.write(pbx)
+
+          # 2. Меняем версию в существующем Podfile
+          pod_path = 'ios/Podfile'
+          if os.path.exists(pod_path):
+              with open(pod_path, 'r') as f: pod = f.read()
+              
+              # Раскомментируем и ставим platform :ios, '15.0'
+              pod = re.sub(r'^#? ?platform :ios.*', "platform :ios, '15.0'", pod, flags=re.MULTILINE)
+              
+              # Форсируем 15.0 для всех зависимостей (Firebase)
+              hook_old = 'flutter_additional_ios_build_settings(target)'
+              hook_new = hook_old + """
+                target.build_configurations.each do |config|
+                  config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+                end"""
+              if "IPHONEOS_DEPLOYMENT_TARGET" not in pod:
+                  pod = pod.replace(hook_old, hook_new)
+              
+              with open(pod_path, 'w') as f: f.write(pod)
+          print("Патч на iOS 15.0 успешно применен!")
           EOF
-          
-          # 5. Прописываем версию 15.0 в настройках самого проекта Xcode
-          find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
-          
-          # 6. Финально устанавливаем поды
-          cd ios
-          pod install --repo-update
-          cd ..
+          python3 patch_ios.py
 
       - name: Build iOS Release
-        run: |
-          # --no-pub не дает Flutter перезаписать наш Podfile
-          flutter build ios --release --no-codesign --no-pub
+        # Теперь Flutter сам вызовет pod install, и у него будут все нужные файлы и правильная версия!
+        run: flutter build ios --release --no-codesign
 
       - name: Create IPA
         run: |
