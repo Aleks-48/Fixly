@@ -15,52 +15,45 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Prepare iOS and Patch
+      - name: Prepare Project
         run: |
-          # 1. Загружаем зависимости Flutter
           flutter pub get
-          
-          # 2. ИСПРАВЛЕНИЕ ОШИБКИ: Создаем папку и "файл-обманку"
-          # Это нужно, чтобы Ruby (Podfile) нашел файл и функции, даже если они пока пустые
-          mkdir -p ios/Flutter
-          echo "def flutter_install_all_ios_pods(path); end" > ios/Flutter/generated_podhelpers.rb
-          echo "def flutter_additional_ios_build_settings(target); end" >> ios/Flutter/generated_podhelpers.rb
-          
-          # 3. Генерируем реальные файлы конфигурации
-          # Flutter увидит нашу заглушку и ПЕРЕЗАПИШЕТ её правильным рабочим кодом
+          # Генерируем все служебные файлы Flutter (включая generated_podhelpers.rb)
+          # без запуска CocoaPods
           flutter build ios --config-only --no-codesign
+
+      - name: Patch iOS Version and Pods
+        run: |
+          # 1. Форсируем iOS 15.0 в проекте Xcode
+          find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
           
-          # 4. Патчим версию iOS до 15.0 везде, где это нужно
+          # 2. Правим Podfile: устанавливаем платформу и добавляем пост-инсталл хук
           python3 - << 'EOF'
-          import re
-          import os
-
-          # Исправляем проект Xcode
-          pbx_path = 'ios/Runner.xcodeproj/project.pbxproj'
-          if os.path.exists(pbx_path):
-              with open(pbx_path, 'r') as f: pbx = f.read()
-              pbx = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*;', 'IPHONEOS_DEPLOYMENT_TARGET = 15.0;', pbx)
-              with open(pbx_path, 'w') as f: f.write(pbx)
-
-          # Исправляем Podfile (ставим платформу 15.0)
-          pod_path = 'ios/Podfile'
-          if os.path.exists(pod_path):
-              with open(pod_path, 'r') as f: pod = f.read()
-              pod = re.sub(r'^#? ?platform :ios.*', "platform :ios, '15.0'", pod, flags=re.MULTILINE)
-              with open(pod_path, 'w') as f: f.write(pod)
+          import os, re
+          path = 'ios/Podfile'
+          if os.path.exists(path):
+              with open(path, 'r') as f: content = f.read()
+              
+              # Устанавливаем платформу
+              content = re.sub(r'^#? ?platform :ios.*', "platform :ios, '15.0'", content, flags=re.MULTILINE)
+              
+              # Добавляем принудительную версию для всех подов
+              if "config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'" not in content:
+                  hook = "flutter_additional_ios_build_settings(target)"
+                  patch = hook + "\n      target.build_configurations.each do |config|\n        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'\n      end"
+                  content = content.replace(hook, patch)
+                  
+              with open(path, 'w') as f: f.write(content)
           EOF
 
-          # 5. Устанавливаем поды (теперь все файлы на месте)
+      - name: Install Pods
+        run: |
           cd ios
           pod install --repo-update
           cd ..
 
       - name: Build iOS Release
-        # Теперь Flutter сам вызовет pod install, и у него будут все нужные файлы и правильная версия!
-        run: flutter build ios --release --no-codesign
+        run: flutter build ios --release --no-codesign --no-bundle
 
       - name: Create IPA
         run: |
