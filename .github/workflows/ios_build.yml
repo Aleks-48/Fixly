@@ -18,6 +18,21 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
+      - name: Pre-build iOS (Generate config)
+        # Эта команда создаст все недостающие файлы в папке ios
+        run: flutter build ios --release --no-codesign --config-only
+
+      - name: Patch Podfile for iOS 15
+        run: |
+          # Заходим в папку ios, находим Podfile и меняем 11.0 или 13.0 на 15.0
+          cd ios
+          sed -i '' "s/platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
+          sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
+          # Если строка закомментирована, раскомментируем и ставим 15.0
+          sed -i '' "s/# platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
+          sed -i '' "s/# platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
+          cd ..
+
       - name: Build iOS
         run: flutter build ios --release --no-codesign
 
