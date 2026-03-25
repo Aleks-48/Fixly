@@ -16,31 +16,27 @@ jobs:
           channel: 'stable'
 
       - name: Install Dependencies
-        run: flutter pub get
-
-      - name: Comprehensive iOS Patching
         run: |
-          # 1. Генерируем iOS структуру
+          flutter pub get
+          flutter precache --ios
+
+      - name: Prepare iOS and Patch
+        run: |
+          # 1. Создаем структуру iOS (если её нет)
           flutter create . --platforms=ios
           
-          # 2. Принудительно меняем версию в проекте Xcode (Runner)
-          # Это исправляет корень проблемы, где Xcode думает, что проект под iOS 11/13
+          # 2. Генерируем служебные файлы Flutter (тот самый generated_podhelpers.rb)
+          # Делаем это ДО правки Podfile
+          flutter build ios --config-only --no-codesign
+          
+          # 3. Правим версию iOS в самом проекте Xcode (внутри pbxproj)
           find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
           
-          # 3. Создаем идеальный Podfile с нуля
-          # Мы используем 'generated_podhelpers.rb' — это современный стандарт Flutter
-          cat << EOF > ios/Podfile
-          platform :ios, '15.0'
-
-          load File.join(File.dirname(File.realpath(__FILE__)), 'Flutter', 'generated_podhelpers.rb')
-
-          target 'Runner' do
-            use_frameworks!
-            use_modular_headers!
-
-            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
-          end
-
+          # 4. Правим версию iOS в Podfile (меняем существующую строку, а не перезаписываем файл)
+          sed -i '' "s/platform :ios, '[0-9.]*'/platform :ios, '15.0'/g" ios/Podfile
+          
+          # 5. Добавляем post_install хук в конец Podfile для гарантии 15.0 для всех подов
+          echo "
           post_install do |installer|
             installer.pods_project.targets.each do |target|
               flutter_additional_ios_build_settings(target)
@@ -48,14 +44,11 @@ jobs:
                 config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
               end
             end
-          end
-          EOF
+          end" >> ios/Podfile
 
       - name: Build iOS
         run: |
-          # Очистка кэша перед финальной сборкой
-          flutter clean
-          flutter pub get
+          # ВАЖНО: Мы НЕ запускаем flutter clean здесь, чтобы не удалить пропатченные файлы
           flutter build ios --release --no-codesign
 
       - name: Create IPA
