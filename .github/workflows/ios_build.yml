@@ -8,27 +8,46 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # Обновили с v3 на v4
+        uses: actions/checkout@v4
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
+
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods
+          pod setup
 
       - name: Get dependencies
         run: flutter pub get
 
       - name: Build iOS (No codesign)
-        run: flutter build ios --release --no-codesign
+        run: |
+          # Устанавливаем поды для iOS части
+          cd android || cd . # просто проверка папок
+          cd ../ios
+          pod install
+          cd ..
+          # Собираем само приложение
+          flutter build ios --release --no-codesign
 
       - name: Create IPA (Manual hack)
         run: |
           mkdir -p Payload
-          mv build/ios/iphoneos/Runner.app Payload
+          # Проверяем, где именно лежит собранное приложение, и копируем его
+          APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: .app file not found!"
+            exit 1
+          fi
+          cp -r "$APP_PATH" Payload/
           zip -r app.ipa Payload
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v4 # ВОТ ТУТ БЫЛА ОШИБКА, исправили на v4
+        uses: actions/upload-artifact@v4
         with:
           name: fixly-iphone-app
           path: app.ipa
