@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -14,33 +14,20 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          cache: true
 
-      - name: Install CocoaPods
-        run: |
-          sudo gem install cocoapods
-          pod setup
-
-      - name: Get dependencies
+      - name: Install Dependencies
         run: flutter pub get
 
       - name: Build iOS (No codesign)
-        run: |
-          # Устанавливаем поды для iOS части
-          cd android || cd . # просто проверка папок
-          cd ../ios
-          pod install
-          cd ..
-          # Собираем само приложение
-          flutter build ios --release --no-codesign
+        # Убрали ручной pod install. Команда ниже сама создаст Podfile и скачает всё что нужно.
+        run: flutter build ios --release --no-codesign
 
       - name: Create IPA (Manual hack)
         run: |
           mkdir -p Payload
-          # Проверяем, где именно лежит собранное приложение, и копируем его
           APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
-            echo "Error: .app file not found!"
+            echo "Error: .app file not found! Check the build step above."
             exit 1
           fi
           cp -r "$APP_PATH" Payload/
