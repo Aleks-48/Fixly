@@ -15,45 +15,40 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Prepare Project
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Generate Flutter iOS Config
         run: |
-          flutter pub get
-          # Генерируем все служебные файлы Flutter (включая generated_podhelpers.rb)
-          # без запуска CocoaPods
+          # Это создаст папку ios/Flutter и файл generated_podhelpers.rb
+          # без запуска основной сборки и без вызова pod install
           flutter build ios --config-only --no-codesign
 
-      - name: Patch iOS Version and Pods
+      - name: Patch iOS Version
         run: |
-          # 1. Форсируем iOS 15.0 в проекте Xcode
+          # Устанавливаем 15.0 в проекте Xcode
           find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
           
-          # 2. Правим Podfile: устанавливаем платформу и добавляем пост-инсталл хук
+          # Устанавливаем 15.0 в Podfile
           python3 - << 'EOF'
           import os, re
           path = 'ios/Podfile'
           if os.path.exists(path):
               with open(path, 'r') as f: content = f.read()
-              
-              # Устанавливаем платформу
               content = re.sub(r'^#? ?platform :ios.*', "platform :ios, '15.0'", content, flags=re.MULTILINE)
-              
-              # Добавляем принудительную версию для всех подов
-              if "config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'" not in content:
-                  hook = "flutter_additional_ios_build_settings(target)"
-                  patch = hook + "\n      target.build_configurations.each do |config|\n        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'\n      end"
-                  content = content.replace(hook, patch)
-                  
               with open(path, 'w') as f: f.write(content)
           EOF
 
       - name: Install Pods
         run: |
           cd ios
+          # Теперь файлы на месте, и pod install не упадет
           pod install --repo-update
           cd ..
 
       - name: Build iOS Release
-        run: flutter build ios --release --no-codesign --no-bundle
+        # Используем --no-pub, так как мы уже всё подготовили
+        run: flutter build ios --release --no-codesign --no-pub
 
       - name: Create IPA
         run: |
