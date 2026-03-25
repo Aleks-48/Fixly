@@ -18,32 +18,13 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build iOS (Initial to generate files)
-        # Запускаем сборку, чтобы Flutter создал папку ios и Podfile. 
-        # Она может упасть в конце, поэтому добавляем || true
-        run: flutter build ios --release --no-codesign || true
-
-      - name: Upgrade iOS Deployment Target
-        run: |
-          # Находим Podfile и меняем версию с 13.0 (дефолт) на 15.0 (нужно для Firebase)
-          if [ -f ios/Podfile ]; then
-            sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.0'/g" ios/Podfile
-            sed -i '' "s/# platform :ios, '13.0'/platform :ios, '15.0'/g" ios/Podfile
-            echo "Podfile updated to iOS 15.0"
-          fi
-
-      - name: Final Build iOS
-        # Теперь запускаем чистовую сборку
+      - name: Build iOS
         run: flutter build ios --release --no-codesign
 
-      - name: Create IPA (Manual hack)
+      - name: Create IPA
         run: |
           mkdir -p Payload
           APP_PATH=$(find build/ios/iphoneos -name "*.app" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: .app file not found!"
-            exit 1
-          fi
           cp -r "$APP_PATH" Payload/
           zip -r app.ipa Payload
 
