@@ -22,21 +22,19 @@ jobs:
 
       - name: Prepare iOS and Patch
         run: |
-          # 1. Создаем структуру проекта для iOS
+          # 1. Создаем структуру проекта (если её нет)
           flutter create . --platforms=ios
           
           # 2. Подтягиваем зависимости
           flutter pub get
           
-          # 3. РЕШЕНИЕ ОШИБКИ: Создаем папку и временную заглушку для podhelpers
-          # Это нужно, чтобы шаг создания Podfile и pod install не падали
+          # 3. СОЗДАЕМ ПАПКУ И ФАЙЛ-ЗАГЛУШКУ (Критически важно!)
+          # Это предотвратит падение Ruby в Podfile
           mkdir -p ios/Flutter
-          touch ios/Flutter/generated_podhelpers.rb
+          echo "def flutter_install_all_ios_pods(path); end" > ios/Flutter/generated_podhelpers.rb
+          echo "def flutter_additional_ios_build_settings(target); end" >> ios/Flutter/generated_podhelpers.rb
           
-          # 4. Генерируем конфиги Flutter (теперь файл перезапишется реальным кодом)
-          flutter build ios --config-only --no-codesign || true
-          
-          # 5. Создаем правильный Podfile (iOS 15.0)
+          # 4. Теперь создаем наш правильный Podfile
           cat << EOF > ios/Podfile
           platform :ios, '15.0'
           load File.join(File.dirname(File.realpath(__FILE__)), 'Flutter', 'generated_podhelpers.rb')
@@ -55,10 +53,14 @@ jobs:
           end
           EOF
 
-          # 6. Прописываем версию 15.0 в самом проекте Xcode
+          # 5. Генерируем РЕАЛЬНЫЕ конфиги Flutter (перезапишет заглушку)
+          # Используем --config-only, чтобы не запускать полную сборку сейчас
+          flutter build ios --config-only --no-codesign || true
+
+          # 6. Прописываем версию 15.0 в проекте Xcode
           find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
 
-          # 7. Устанавливаем поды вручную
+          # 7. Финальная установка подов вручную
           cd ios
           rm -rf Pods
           rm -rf Podfile.lock
