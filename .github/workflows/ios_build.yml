@@ -18,22 +18,38 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Pre-build iOS (Generate config)
-        # Эта команда создаст все недостающие файлы в папке ios
-        run: flutter build ios --release --no-codesign --config-only
+      - name: Generate iOS Infrastructure
+        # Мы создаем папку ios, но ЗАПРЕЩАЕМ Flutter запускать pod install автоматически
+        run: |
+          flutter create . --platforms=ios
+          flutter pub get
 
       - name: Patch Podfile for iOS 15
         run: |
-          # Заходим в папку ios, находим Podfile и меняем 11.0 или 13.0 на 15.0
           cd ios
+          # Если файла нет (мало ли), создадим минимальный дефолтный
+          if [ ! -f Podfile ]; then
+            flutter build ios --config-only --no-pub || true
+          fi
+          # Принудительно ставим платформу 15.0 во всех возможных местах
           sed -i '' "s/platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
           sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
-          # Если строка закомментирована, раскомментируем и ставим 15.0
           sed -i '' "s/# platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
           sed -i '' "s/# platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
+          # Добавляем фикс для всех подов внутри Podfile
+          echo "
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+              end
+            end
+          end" >> Podfile
           cd ..
 
       - name: Build iOS
+        # Теперь запускаем сборку, она сама сделает pod install с нашими правками
         run: flutter build ios --release --no-codesign
 
       - name: Create IPA
