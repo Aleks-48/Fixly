@@ -18,23 +18,36 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Generate iOS files (Expect failure)
-        # Позволяем команде упасть (|| true означает "если будет ошибка - игнорируй и иди дальше").
-        # К моменту падения нужный нам Podfile уже будет создан!
-        run: flutter build ios --config-only || true
+      - name: Generate iOS files safely
+        # Секретная команда: она воссоздает системные файлы Apple и Podfile,
+        # но при этом НЕ запускает pod install, поэтому не падает из-за Firebase!
+        run: flutter create . --platforms=ios
 
-      - name: Update Podfile to iOS 15
+      - name: Patch Podfile for iOS 15
         run: |
           cd ios
-          # Теперь, когда Podfile точно существует, принудительно меняем версию на 15.0
+          # Теперь спокойно ищем файл и меняем версии на 15.0
           sed -i '' "s/platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
+          sed -i '' "s/platform :ios, '12.0'/platform :ios, '15.0'/g" Podfile
           sed -i '' "s/platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
           sed -i '' "s/# platform :ios, '11.0'/platform :ios, '15.0'/g" Podfile
+          sed -i '' "s/# platform :ios, '12.0'/platform :ios, '15.0'/g" Podfile
           sed -i '' "s/# platform :ios, '13.0'/platform :ios, '15.0'/g" Podfile
+          
+          # Заставляем абсолютно все плагины (включая Firebase) использовать iOS 15.0
+          echo "
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+              end
+            end
+          end" >> Podfile
           cd ..
 
       - name: Build iOS
-        # Запускаем чистовую сборку. Теперь Podfile правильный, и Firebase установится!
+        # И только теперь, когда Podfile ИДЕАЛЬНЫЙ, запускаем настоящую сборку
         run: flutter build ios --release --no-codesign
 
       - name: Create IPA
