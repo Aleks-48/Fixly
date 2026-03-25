@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.8
+  sdk: '>=3.3.0 <4.0.0' # Поднял версию для совместимости с новыми пакетами
 
 dependencies:
   flutter:
@@ -42,7 +42,9 @@ dependencies:
   firebase_messaging: ^16.1.1
   jitsi_meet_flutter_sdk: ^11.6.0
   permission_handler: ^11.3.1
-  screens: ^2.5.0
+  google_sign_in: ^6.2.1 # РЕКОМЕНДУЮ эту версию, она стабильнее для Supabase
+  signature: ^6.3.0
+  sign_in_with_apple: ^6.1.1
 
 dev_dependencies:
   flutter_test:
@@ -51,9 +53,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  
-  # Сюда мы будем складывать звуки, иконки и шрифты
   assets:
-    - assets/sounds/
-    - assets/images/
-    - assets/icons/
+    - assets/images/sheber_ata.png
+    - assets/sounds/11325622-atmosphere-sound-effect-239969.mp3
+    - assets/sounds/dragon-studio-new-notification-3-398649.mp3
+    - assets/sounds/ribhavagrawal-notification-sound-type-20-no-copyright-410276.mp3
+    - assets/sounds/tutorial/

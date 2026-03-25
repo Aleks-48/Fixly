@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:fixly_app/main.dart'; 
 import '../../models/user_model.dart'; 
 import '../../services/profile_service.dart'; 
 
@@ -12,115 +13,115 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-  // 1. Контроллеры для всех полей ввода
+  // Контроллеры ввода
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _firstNameController = TextEditingController(); 
   final _lastNameController = TextEditingController();
   final _binController = TextEditingController();
   
-  // Роли: 'master' (Подрядчик) или 'osi' (Председатель)
+  // Роли: 'master', 'chairman' или 'resident'
   String _selectedRole = 'master'; 
   bool _isLoading = false;
+  bool _obscurePassword = true;
 
   final supabase = Supabase.instance.client;
 
   // ОСНОВНАЯ ЛОГИКА РЕГИСТРАЦИИ
   Future<void> _signUp() async {
-    // Извлекаем текст из контроллеров
     final String email = _emailController.text.trim();
     final String password = _passwordController.text.trim();
     final String firstName = _firstNameController.text.trim();
     final String lastName = _lastNameController.text.trim();
     final String bin = _binController.text.trim();
-    final String roleToSave = _selectedRole;
+    final String lang = appLanguage.value;
 
-    // 2. Валидация данных
-    if (email.isEmpty || password.isEmpty || firstName.isEmpty || lastName.isEmpty || bin.isEmpty) {
-      _showSnackBar('Заполните все поля, включая БИН/ИИН', Colors.orange);
+    // Валидация (для жителя БИН не обязателен)
+    bool isResident = _selectedRole == 'resident';
+    bool isBinEmpty = !isResident && bin.isEmpty;
+
+    if (email.isEmpty || password.isEmpty || firstName.isEmpty || lastName.isEmpty || isBinEmpty) {
+      _showSnackBar(
+        lang == 'ru' ? 'Заполните все обязательные поля' : 'Барлық міндетті өрістерді толтырыңыз', 
+        Colors.orange
+      );
       return;
     }
 
     if (password.length < 6) {
-      _showSnackBar('Пароль должен быть не менее 6 символов', Colors.orange);
+      _showSnackBar(
+        lang == 'ru' ? 'Пароль слишком короткий' : 'Құпия сөз тым қысқа', 
+        Colors.orange
+      );
       return;
     }
 
-    if (!mounted) return;
     setState(() => _isLoading = true);
     
     try {
-      debugPrint("Попытка регистрации: $email | Роль: $roleToSave");
-
-      // 3. Регистрация в Supabase Auth
-      // Передаем данные в метаданные (data), чтобы они сохранились в системе Auth
+      // 1. Регистрация в Supabase Auth
       final response = await supabase.auth.signUp(
-  email: email,
-  password: password,
-  data: {
-    'first_name': firstName,
-    'last_name': lastName,
-    'role': _selectedRole, // Убедись, что тут реально 'osi' или 'master'
-    'bin': bin,
+        email: email,
+        password: password,
+        data: {
+          'first_name': firstName,
+          'last_name': lastName,
+          'role': _selectedRole,
+          'bin': isResident ? "" : bin, // Для жителя пустая строка
         }, 
       );
 
       final user = response.user;
       if (user != null) {
-        debugPrint("Auth успешна, ID: ${user.id}. Создаем профиль...");
-
-        // 4. Создаем объект модели пользователя
+        // 2. Создаем модель для БД
         final newUser = UserModel(
           id: user.id,
           firstName: firstName,
           lastName: lastName,
           email: email,
-          phone: '', // Телефон можно будет добавить позже в профиле
-          bin: bin,
-          role: roleToSave,
+          phone: '', 
+          bin: isResident ? "" : bin,
+          role: _selectedRole,
         );
 
-        // 5. Сохраняем данные в таблицу 'profiles' через ProfileService
+        // 3. Сохраняем в таблицу profiles
         final success = await ProfileService().saveProfile(newUser);
 
         if (success) {
+          userRole.value = _selectedRole; // Обновляем глобальное состояние
           if (!mounted) return;
-          _showSnackBar('Регистрация завершена успешно!', Colors.green);
+          _showSnackBar(
+            lang == 'ru' ? 'Успешная регистрация!' : 'Тіркелу сәтті аяқталды!', 
+            Colors.green
+          );
           
-          // Переход на главный экран (убедись, что роут '/home' или '/main' настроен)
           Navigator.pushReplacementNamed(context, '/home');
         } else {
-          _showSnackBar('Ошибка при создании профиля в базе данных', Colors.redAccent);
+          throw Exception(lang == 'ru' ? 'Ошибка базы данных' : 'Деректер қорының қатесі');
         }
       }
     } on AuthException catch (e) {
-      debugPrint("Ошибка Supabase Auth: ${e.message}");
       _showSnackBar(e.message, Colors.redAccent);
     } catch (e) {
-      debugPrint("ПОЛНАЯ ОШИБКА ТУТ: $e"); // Это покажет детали в консоли дебага
-      _showSnackBar('Ошибка: $e', Colors.redAccent);
+      _showSnackBar('Error: $e', Colors.redAccent);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // Метод для показа уведомлений (SnackBar)
   void _showSnackBar(String message, Color bgColor) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message), 
         backgroundColor: bgColor,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
 
   @override
   void dispose() {
-    // Очищаем контроллеры при закрытии экрана
     _emailController.dispose();
     _passwordController.dispose();
     _firstNameController.dispose();
@@ -133,94 +134,86 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final lang = appLanguage.value;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Регистрация", style: TextStyle(fontWeight: FontWeight.bold)),
-        centerTitle: true,
+        title: Text(lang == 'ru' ? "Регистрация" : "Тіркелу"),
         elevation: 0,
-        backgroundColor: Colors.transparent,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              "Создать профиль", 
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)
+            Text(
+              lang == 'ru' ? "Создать профиль" : "Профиль жасау", 
+              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)
             ),
             const SizedBox(height: 8),
-            const Text(
-              "Заполните данные для начала работы в системе",
-              style: TextStyle(color: Colors.grey),
+            Text(
+              lang == 'ru' ? "Заполните данные для регистрации" : "Тіркелу үшін деректерді толтырыңыз",
+              style: const TextStyle(color: Colors.grey),
             ),
             const SizedBox(height: 32),
             
-            // ПОЛЕ: ИМЯ
-            TextField(
-              controller: _firstNameController, 
-              decoration: _buildInputDecoration('Имя', LucideIcons.user),
-              textCapitalization: TextCapitalization.words,
-            ),
+            _buildField(_firstNameController, lang == 'ru' ? 'Имя' : 'Есімі', LucideIcons.user),
+            const SizedBox(height: 16),
+            _buildField(_lastNameController, lang == 'ru' ? 'Фамилия' : 'Тегі', LucideIcons.user),
             const SizedBox(height: 16),
             
-            // ПОЛЕ: ФАМИЛИЯ
-            TextField(
-              controller: _lastNameController, 
-              decoration: _buildInputDecoration('Фамилия', LucideIcons.user),
-              textCapitalization: TextCapitalization.words,
-            ),
-            const SizedBox(height: 16),
+            // Динамическое поле БИН/ИИН (скрывается для жителя)
+            if (_selectedRole != 'resident') ...[
+              _buildField(_binController, 'БИН / ИИН', LucideIcons.fileDigit, isNumeric: true),
+              const SizedBox(height: 16),
+            ],
 
-            // ПОЛЕ: БИН / ИИН
-            TextField(
-              controller: _binController, 
-              decoration: _buildInputDecoration('БИН / ИИН организации', LucideIcons.badgeCheck),
-              keyboardType: TextInputType.number,
-            ),
+            _buildField(_emailController, 'Email', LucideIcons.mail, isEmail: true),
             const SizedBox(height: 16),
             
-            // ПОЛЕ: EMAIL
             TextField(
-              controller: _emailController, 
-              decoration: _buildInputDecoration('Email', LucideIcons.mail),
-              keyboardType: TextInputType.emailAddress,
+              controller: _passwordController,
+              obscureText: _obscurePassword,
+              decoration: _buildInputDecoration(lang == 'ru' ? 'Пароль' : 'Құпия сөз', LucideIcons.lock).copyWith(
+                suffixIcon: IconButton(
+                  icon: Icon(_obscurePassword ? LucideIcons.eye : LucideIcons.eyeOff, size: 20),
+                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                ),
+              ),
             ),
-            const SizedBox(height: 16),
-            
-            // ПОЛЕ: ПАРОЛЬ
-            TextField(
-              controller: _passwordController, 
-              obscureText: true, 
-              decoration: _buildInputDecoration('Пароль', LucideIcons.lock),
-            ),
+
             const SizedBox(height: 32),
             
-            const Text(
-              "Выберите вашу роль", 
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)
+            Text(
+              lang == 'ru' ? "Ваша роль" : "Сіздің рөліңіз", 
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             
-            // КАРТОЧКИ ВЫБОРА РОЛИ
-            Row(
+            // Сетка выбора ролей (теперь 3 роли)
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
               children: [
                 _buildRoleCard(
                   'master', 
-                  "Подрядчик", 
+                  lang == 'ru' ? "Подрядчик" : "Мердігер", 
                   LucideIcons.wrench, 
                   "ИП / ТОО", 
-                  theme, 
                   isDark
                 ),
-                const SizedBox(width: 12),
                 _buildRoleCard(
-                  'osi', 
-                  "ОСИ", 
+                  'chairman', 
+                  lang == 'ru' ? "ОСИ" : "МИБ", 
                   LucideIcons.building, 
-                  "Председатель", 
-                  theme, 
+                  lang == 'ru' ? "Председатель" : "Төраға", 
+                  isDark
+                ),
+                _buildRoleCard(
+                  'resident', 
+                  lang == 'ru' ? "Житель" : "Тұрғын", 
+                  LucideIcons.home, 
+                  lang == 'ru' ? "Собственник" : "Меншік иесі", 
                   isDark
                 ),
               ],
@@ -228,7 +221,6 @@ class _RegisterPageState extends State<RegisterPage> {
             
             const SizedBox(height: 40),
             
-            // КНОПКА РЕГИСТРАЦИИ
             _isLoading 
               ? const Center(child: CircularProgressIndicator()) 
               : ElevatedButton(
@@ -237,114 +229,70 @@ class _RegisterPageState extends State<RegisterPage> {
                     minimumSize: const Size(double.infinity, 56),
                     backgroundColor: Colors.blueAccent,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 2,
                   ),
-                  child: const Text(
-                    "Зарегистрироваться", 
-                    style: TextStyle(
-                      color: Colors.white, 
-                      fontWeight: FontWeight.bold, 
-                      fontSize: 16
-                    )
+                  child: Text(
+                    lang == 'ru' ? "Зарегистрироваться" : "Тіркелу", 
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)
                   ),
                 ),
             
-            const SizedBox(height: 16),
-            
-            // ПЕРЕХОД К ВХОДУ
+            const SizedBox(height: 20),
             Center(
               child: TextButton(
                 onPressed: () => Navigator.pop(context),
                 child: Text(
-                  "Уже есть аккаунт? Войти", 
-                  style: TextStyle(
-                    color: theme.primaryColor, 
-                    fontWeight: FontWeight.w600
-                  )
+                  lang == 'ru' ? "Уже есть аккаунт? Войти" : "Аккаунт бар ма? Кіру", 
+                  style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)
                 ),
               ),
             ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  // Общий стиль для всех полей ввода
+  Widget _buildField(TextEditingController controller, String label, IconData icon, {bool isNumeric = false, bool isEmail = false}) {
+    return TextField(
+      controller: controller,
+      keyboardType: isNumeric ? TextInputType.number : (isEmail ? TextInputType.emailAddress : TextInputType.text),
+      decoration: _buildInputDecoration(label, icon),
+    );
+  }
+
   InputDecoration _buildInputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
       prefixIcon: Icon(icon, size: 20),
-      labelStyle: const TextStyle(fontSize: 14),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.grey),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
-      ),
     );
   }
 
-  // Виджет карточки выбора роли
-  Widget _buildRoleCard(String role, String title, IconData icon, String subtitle, ThemeData theme, bool isDark) {
+  Widget _buildRoleCard(String role, String title, IconData icon, String subtitle, bool isDark) {
     final isSelected = _selectedRole == role;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedRole = role),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
-          decoration: BoxDecoration(
-            color: isSelected 
-                ? Colors.blue.withOpacity(isDark ? 0.2 : 0.1) 
-                : (isDark ? Colors.grey[900] : Colors.grey[50]),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isSelected ? Colors.blue : (isDark ? Colors.grey[800]! : Colors.grey[300]!), 
-              width: 2
-            ),
-            boxShadow: isSelected ? [
-              BoxShadow(
-                color: Colors.blue.withOpacity(0.2),
-                blurRadius: 8,
-                offset: const Offset(0, 4)
-              )
-            ] : null,
-          ),
-          child: Column(
-            children: [
-              Icon(
-                icon, 
-                color: isSelected ? Colors.blue : Colors.grey, 
-                size: 32
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title, 
-                style: TextStyle(
-                  fontWeight: FontWeight.bold, 
-                  color: isSelected ? Colors.blue : theme.textTheme.bodyLarge?.color
-                )
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle, 
-                textAlign: TextAlign.center, 
-                style: TextStyle(
-                  fontSize: 10, 
-                  color: theme.textTheme.bodySmall?.color
-                )
-              ),
-            ],
-          ),
+    // Используем фиксированную ширину для карточек в Wrap, чтобы они смотрелись аккуратно
+    double cardWidth = (MediaQuery.of(context).size.width - 68) / 2;
+    if (role == 'resident') cardWidth = MediaQuery.of(context).size.width - 48;
+
+    return GestureDetector(
+      onTap: () => setState(() => _selectedRole = role),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        width: cardWidth,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.blueAccent.withOpacity(0.1) : (isDark ? Colors.white10 : Colors.grey[100]),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: isSelected ? Colors.blueAccent : Colors.transparent, width: 2),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: isSelected ? Colors.blueAccent : Colors.grey, size: 28),
+            const SizedBox(height: 8),
+            Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? Colors.blueAccent : null)),
+            Text(subtitle, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+          ],
         ),
       ),
     );

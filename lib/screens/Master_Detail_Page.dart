@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:fixly_app/screens/ai_chat_screen.dart'; // Чат с ИИ
-import 'package:fixly_app/screens/chat_screen.dart';    // Обычный чат
+import 'package:fixly_app/screens/ai_chat_screen.dart';
+import 'package:fixly_app/screens/chat_screen.dart';
 
 class MasterDetailPage extends StatefulWidget {
   final Map<String, dynamic> masterData;
@@ -17,23 +17,26 @@ class MasterDetailPage extends StatefulWidget {
 class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerProviderStateMixin {
   final supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _portfolioItems = [];
+  List<Map<String, dynamic>> _reviews = [];
   bool _isLoading = true;
   late AnimationController _fadeController;
 
   @override
   void initState() {
     super.initState();
-    _loadPortfolio();
+    _loadInitialData();
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
     )..forward();
   }
 
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    super.dispose();
+  Future<void> _loadInitialData() async {
+    await Future.wait([
+      _loadPortfolio(),
+      _loadReviews(),
+    ]);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _loadPortfolio() async {
@@ -42,17 +45,29 @@ class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerPr
           .from('portfolio')
           .select('*')
           .eq('master_id', widget.masterData['id']);
-      
-      if (mounted) {
-        setState(() {
-          _portfolioItems = List<Map<String, dynamic>>.from(data);
-          _isLoading = false;
-        });
-      }
+      if (mounted) _portfolioItems = List<Map<String, dynamic>>.from(data);
     } catch (e) {
       debugPrint("Ошибка загрузки портфолио: $e");
-      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final data = await supabase
+          .from('reviews')
+          .select('*, profiles(full_name, avatar_url)')
+          .eq('master_id', widget.masterData['id'])
+          .order('created_at', ascending: false);
+      if (mounted) _reviews = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint("Ошибка загрузки отзывов: $e");
+    }
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
   }
 
   void _showCallSimulation(String title, IconData icon, Color color) {
@@ -60,9 +75,7 @@ class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerPr
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1C1C1E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(40)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(40))),
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.75,
         padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
@@ -75,8 +88,7 @@ class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerPr
               decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: color.withOpacity(0.5), width: 2)),
               child: CircleAvatar(
                 radius: 70,
-                backgroundImage: widget.masterData['avatar_url'] != null 
-                    ? NetworkImage(widget.masterData['avatar_url']) : null,
+                backgroundImage: widget.masterData['avatar_url'] != null ? NetworkImage(widget.masterData['avatar_url']) : null,
                 child: widget.masterData['avatar_url'] == null ? const Icon(LucideIcons.user, size: 70) : null,
               ),
             ),
@@ -113,36 +125,27 @@ class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerPr
     );
   }
 
-  // ОБНОВЛЕННЫЙ МЕТОД ОТКРЫТИЯ ЧАТА
-// САМЫЙ ПРОСТОЙ ВАРИАНТ - БЕЗ ЗАПРОСОВ К БАЗЕ
-void _openChat() {
-  final myId = supabase.auth.currentUser?.id;
-  final masterId = widget.masterData['id'].toString();
-  final masterName = widget.masterData['name'] ?? "Мастер";
-
-  if (myId == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Пожалуйста, войдите в аккаунт")),
-    );
-    return;
-  }
-
-  // Генерируем ID чата на лету, чтобы не зависеть от таблицы jobs
-  final String generatedChatId = "chat_${myId.substring(0, 8)}_${masterId.substring(0, 8)}";
-
-  // Мгновенный переход без await - это уберет вечную загрузку
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => ChatScreen(
-        taskId: generatedChatId, 
-        taskTitle: "Чат с мастером",
-        receiverId: masterId,
-        receiverName: masterName,
+  void _openChat() {
+    final myId = supabase.auth.currentUser?.id;
+    final masterId = widget.masterData['id'].toString();
+    final masterName = widget.masterData['name'] ?? "Мастер";
+    if (myId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Пожалуйста, войдите в аккаунт")));
+      return;
+    }
+    final String generatedChatId = "chat_${myId.substring(0, 8)}_${masterId.substring(0, 8)}";
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          taskId: generatedChatId,
+          taskTitle: "Чат с мастером",
+          receiverId: masterId,
+          receiverName: masterName,
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +153,7 @@ void _openChat() {
     const Color cardGrey = Color(0xFF1C1C1E);
     const Color accentBlue = Color(0xFF3B82F6);
 
-    final String name = widget.masterData['name'] ?? "Иван Иванович";
+    final String name = widget.masterData['name'] ?? "Мастер";
     final String spec = widget.masterData['specialization'] ?? "Специалист";
     final double rating = (widget.masterData['avg_rating'] ?? 0.0).toDouble();
 
@@ -183,11 +186,7 @@ void _openChat() {
                   children: [
                     Container(
                       decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0xFF2563EB), bgBlack],
-                        ),
+                        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF2563EB), bgBlack]),
                       ),
                     ),
                     Column(
@@ -244,16 +243,31 @@ void _openChat() {
                     const SizedBox(height: 35),
                     _buildSectionTitle("О МАСТЕРЕ"),
                     Text(
-                      widget.masterData['bio'] ?? "Профессиональный мастер с большим опытом работы. Гарантирую качество, соблюдение сроков и чистоту на объекте. Работаю с современными материалами и оборудованием. Индивидуальный подход к каждому клиенту.",
+                      widget.masterData['bio'] ?? "Профессиональный мастер с большим опытом работы. Гарантирую качество, соблюдение сроков и чистоту на объекте. Работаю с современными материалами и оборудованием.",
                       style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.6),
                     ),
                     const SizedBox(height: 35),
                     _buildSectionTitle("ПОРТФОЛИО"),
                     _buildPortfolioGrid(accentBlue, cardGrey),
                     const SizedBox(height: 35),
-                    _buildSectionTitle("ОТЗЫВЫ КЛИЕНТОВ"),
-                    _buildReviewItem("Алексей", "Отличный мастер! Сделал всё быстро и качественно. Рекомендую всем.", 5.0),
-                    _buildReviewItem("Мария", "Приехал вовремя, очень вежливый. Исправил то, что другие не смогли.", 4.8),
+                    
+                    // БЛОК ОТЗЫВОВ
+                    _buildSectionTitle("ОТЗЫВЫ"),
+ExpansionTile(
+  title: const Text("Отзывы клиентов", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+  backgroundColor: Colors.transparent, // Убираем лишний фон
+  collapsedBackgroundColor: Colors.transparent,
+  iconColor: Colors.blueAccent, // Цвет стрелочки при открытии
+  collapsedIconColor: Colors.white54, // Цвет стрелочки при закрытии
+  childrenPadding: const EdgeInsets.only(top: 10),
+  children: _reviews.isEmpty 
+    ? [const Padding(padding: EdgeInsets.all(20), child: Text("Пока отзывов нет", style: TextStyle(color: Colors.white30)))]
+    : _reviews.map((review) => _buildReviewItem(
+        review['profiles']?['full_name'] ?? "Клиент", 
+        review['comment'] ?? "", 
+        (review['rating'] ?? 0).toDouble()
+      )).toList(),
+),
                     const SizedBox(height: 140),
                   ],
                 ),
@@ -273,22 +287,14 @@ void _openChat() {
         width: double.infinity,
         padding: const EdgeInsets.all(30),
         decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(20)),
-        child: const Column(
-          children: [
-            Icon(LucideIcons.imageOff, color: Colors.white24, size: 40),
-            SizedBox(height: 10),
-            Text("Портфолио пока пусто", style: TextStyle(color: Colors.white38)),
-          ],
-        ),
+        child: const Column(children: [Icon(LucideIcons.imageOff, color: Colors.white24, size: 40), SizedBox(height: 10), Text("Портфолио пусто", style: TextStyle(color: Colors.white38))]),
       );
     }
     return GridView.builder(
       shrinkWrap: true,
       padding: EdgeInsets.zero,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1,
-      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1),
       itemCount: _portfolioItems.length,
       itemBuilder: (context, index) => _buildWorkItem(_portfolioItems[index]['image_url'], _portfolioItems[index]['type'] == 'video'),
     );
@@ -297,36 +303,38 @@ void _openChat() {
   Widget _buildContactAction(IconData icon, String label, VoidCallback onTap) {
     return Column(
       children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.05))),
-              child: Icon(icon, color: const Color(0xFF3B82F6), size: 24),
-            ),
+        InkWell(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.05))),
+            child: Icon(icon, color: const Color(0xFF3B82F6), size: 24),
           ),
         ),
         const SizedBox(height: 8),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.w500)),
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
       ],
     );
   }
 
-  Widget _buildWorkItem(String url, bool isVideo) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.network(url, fit: BoxFit.cover, errorBuilder: (c, e, s) => Container(color: Colors.white10, child: const Icon(Icons.broken_image, color: Colors.white24))),
-          if (isVideo) Center(child: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle), child: const Icon(Icons.play_arrow, color: Colors.white, size: 30))),
-        ],
-      ),
-    );
-  }
+Widget _buildWorkItem(String url, bool isVideo) {
+  return ClipRRect(
+    borderRadius: BorderRadius.circular(20),
+    child: Image.network(
+      url,
+      fit: BoxFit.cover,
+      // ЭТО РЕШЕНИЕ ПРОБЛЕМЫ:
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          color: Colors.white10,
+          child: const Center(
+            child: Icon(LucideIcons.imageOff, color: Colors.white24, size: 30),
+          ),
+        );
+      },
+    ),
+  );
+}
 
   Widget _buildStatsRow(double rating) {
     return Container(
@@ -349,36 +357,62 @@ void _openChat() {
         Icon(icon, color: color, size: 20),
         const SizedBox(height: 10),
         Text(val, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 0.5)),
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
       ],
     );
   }
 
-  Widget _buildReviewItem(String user, String text, double r) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 15),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(20)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(user, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              Row(children: [const Icon(Icons.star, color: Colors.orangeAccent, size: 14), Text(" $r", style: const TextStyle(color: Colors.white70, fontSize: 12))]),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(text, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.4)),
-        ],
-      ),
-    );
-  }
+Widget _buildReviewItem(String user, String text, double r) {
+  return Container(
+    margin: const EdgeInsets.only(bottom: 12),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white.withOpacity(0.04), // Мягкая прозрачная подложка
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: Colors.white.withOpacity(0.05)), // Едва заметная рамка
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(
+                  radius: 14, 
+                  backgroundColor: Colors.white12, 
+                  child: Icon(LucideIcons.user, size: 14, color: Colors.white54)
+                ),
+                const SizedBox(width: 8),
+                Text(user, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              ],
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1), 
+                borderRadius: BorderRadius.circular(8)
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.star, color: Colors.orange, size: 12), 
+                  Text(" $r", style: const TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold))
+                ]
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(text, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5)),
+      ],
+    ),
+  );
+}
 
   Widget _buildSectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Text(title, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 2.0)),
     );
   }
@@ -388,20 +422,9 @@ void _openChat() {
       color: bg,
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
       child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: accent,
-          minimumSize: const Size(double.infinity, 64),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          elevation: 8,
-          shadowColor: accent.withOpacity(0.4),
-        ),
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            backgroundColor: accent,
-            content: const Text("Запрос отправлен! Мастер скоро свяжется с вами.", style: TextStyle(fontWeight: FontWeight.bold)),
-          ));
-        },
-        child: const Text("ЗАКАЗАТЬ УСЛУГУ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white, letterSpacing: 1.0)),
+        style: ElevatedButton.styleFrom(backgroundColor: accent, minimumSize: const Size(double.infinity, 64), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Запрос отправлен!"))),
+        child: const Text("ЗАКАЗАТЬ УСЛУГУ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
       ),
     );
   }

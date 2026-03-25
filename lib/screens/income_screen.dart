@@ -3,8 +3,56 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class IncomeScreen extends StatelessWidget {
+class IncomeScreen extends StatefulWidget {
   const IncomeScreen({super.key});
+
+  @override
+  State<IncomeScreen> createState() => _IncomeScreenState();
+}
+
+class _IncomeScreenState extends State<IncomeScreen> {
+  // Переменная для хранения цели
+  double _goal = 500000;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchGoal();
+  }
+
+  // Получаем цель из БД при запуске
+  Future<void> _fetchGoal() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+    final data = await Supabase.instance.client
+        .from('profiles')
+        .select('earning_goal')
+        .eq('id', user.id)
+        .maybeSingle();
+    
+    if (data != null && data['earning_goal'] != null) {
+      setState(() {
+        _goal = (data['earning_goal'] as num).toDouble();
+      });
+    }
+  }
+
+  // Метод для обновления цели в БД
+Future<void> _updateGoal(double newGoal) async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    // 1. Обновляем в БД
+    await Supabase.instance.client
+        .from('profiles')
+        .update({'earning_goal': newGoal})
+        .eq('id', user.id);
+    
+    // 2. Обновляем локально состояние, чтобы UI перерисовался моментально
+    setState(() {
+      _goal = newGoal;
+    });
+  }
 
   Future<Map<String, dynamic>> _getRealStats() async {
     final supabase = Supabase.instance.client;
@@ -18,7 +66,6 @@ class IncomeScreen extends StatelessWidget {
           .eq('id', user.id)
           .maybeSingle();
 
-      // Читаем колонку final_price вместо price
       final tasksResponse = await supabase
           .from('tasks')
           .select('final_price, created_at, title')
@@ -32,7 +79,6 @@ class IncomeScreen extends StatelessWidget {
       if (tasksResponse != null) {
         recentTransactions = tasksResponse;
         for (var task in tasksResponse) {
-          // Используем final_price
           final val = task['final_price'];
           if (val != null) {
             calculatedSum += double.tryParse(val.toString()) ?? 0.0;
@@ -74,10 +120,11 @@ class IncomeScreen extends StatelessWidget {
               final data = snapshot.data ?? {};
               final recent = data['recent'] as List? ?? [];
               double earned = (data['earned'] ?? 0).toDouble();
-              double goal = 500000;
 
               return RefreshIndicator(
-                onRefresh: () => Future.sync(() => (context as Element).markNeedsBuild()),
+                onRefresh: () async {
+                   setState(() {});
+                },
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                   padding: const EdgeInsets.all(20),
@@ -86,8 +133,17 @@ class IncomeScreen extends StatelessWidget {
                     children: [
                       _buildBlueCard(data, lang),
                       const SizedBox(height: 30),
-                      _buildSectionHeader(lang == 'ru' ? "Цель на месяц" : "Айлық мақсат"),
-                      _buildGoalCard(earned, goal, lang),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          _buildSectionHeader(lang == 'ru' ? "Цель на месяц" : "Айлық мақсат"),
+                          IconButton(
+                            icon: const Icon(LucideIcons.edit3, size: 18),
+                            onPressed: () => _showEditDialog(lang),
+                          )
+                        ],
+                      ),
+                      _buildGoalCard(earned, _goal, lang),
                       const SizedBox(height: 30),
                       _buildSectionHeader(lang == 'ru' ? "Последние выплаты" : "Соңғы төлемдер"),
                       if (recent.isEmpty)
@@ -106,7 +162,30 @@ class IncomeScreen extends StatelessWidget {
     );
   }
 
-  // --- Вспомогательные виджеты (оставляем без изменений, но фиксим вывод цены) ---
+  void _showEditDialog(String lang) {
+    final TextEditingController controller = TextEditingController(text: _goal.toInt().toString());
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(lang == 'ru' ? "Изменить цель" : "Мақсатты өзгерту"),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: "₸"),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(lang == 'ru' ? "Отмена" : "Болдырмау")),
+          ElevatedButton(
+            onPressed: () {
+              _updateGoal(double.tryParse(controller.text) ?? 500000);
+              Navigator.pop(context);
+            },
+            child: Text(lang == 'ru' ? "Сохранить" : "Сақтау"),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildBlueCard(Map<String, dynamic> data, String lang) {
     return Container(
@@ -153,7 +232,6 @@ class IncomeScreen extends StatelessWidget {
               Text(order['created_at'].toString().split('T')[0], style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ]),
           ),
-          // ТУТ ТОЖЕ СТАВИМ final_price
           Text("+${(order['final_price'] ?? 0).toInt()} ₸", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
         ],
       ),
@@ -174,7 +252,7 @@ class IncomeScreen extends StatelessWidget {
   Widget _buildSectionHeader(String title) => Padding(padding: const EdgeInsets.only(bottom: 15), child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)));
   Widget _buildEmptyState(String lang) => Center(child: Text(lang == 'ru' ? "Тут пока пусто" : "Әзірге бос", style: const TextStyle(color: Colors.grey)));
   Widget _buildGoalCard(double current, double goal, String lang) {
-    double progress = (current / goal).clamp(0.0, 1.0);
+    double progress = goal > 0 ? (current / goal).clamp(0.0, 1.0) : 0.0;
     return Column(children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text("${(progress * 100).toInt()}%", style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),

@@ -1,12 +1,10 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
-    // Убедись, что этот namespace совпадает с твоим фактическим пакетом
     namespace = "com.example.fixly_app" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -20,14 +18,22 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
-    defaultConfig {
-        // Твой уникальный ID приложения
-        applicationId = "com.example.fixly_app"
+    // ЯВНОЕ ОПРЕДЕЛЕНИЕ ПОДПИСИ
+signingConfigs {
+        getByName("debug") {
+            val keystoreFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
 
-        // ВНИМАНИЕ: Jitsi требует минимум 26. 
-        // Если оставить flutter.minSdkVersion, будет ошибка сборки.
+    defaultConfig {
+        applicationId = "com.example.fixly_app"
         minSdk = 26 
-        
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -35,10 +41,9 @@ android {
 
     buildTypes {
         release {
-            // Конфигурация подписи для релизной сборки
+            // Используем ту же подпись, что и в дебаге для тестов
             signingConfig = signingConfigs.getByName("debug")
             
-            // Оптимизация (по желанию можно включить minifyEnabled true)
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(
@@ -46,9 +51,11 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
     }
 
-    // Важно для Jitsi и некоторых других библиотек
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -59,8 +66,4 @@ android {
 
 flutter {
     source = "../.."
-}
-
-dependencies {
-    // Здесь можно добавлять нативные зависимости, если нужно
 }
