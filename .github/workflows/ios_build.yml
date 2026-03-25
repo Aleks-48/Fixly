@@ -18,34 +18,44 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Patch and Build iOS
+      - name: Comprehensive iOS Patching
         run: |
-          # 1. Заставляем Flutter создать папку ios и системные файлы (даже если будет ошибка в конце, файлы появятся)
-          flutter build ios --config-only --no-codesign || true
+          # 1. Генерируем iOS структуру
+          flutter create . --platforms=ios
           
-          # 2. Используем Ruby для «хирургического» исправления Podfile
-          # Это поменяет версию на 15.0 и добавит настройки для всех плагинов (Firebase и др.)
-          ruby -e "
-            path = 'ios/Podfile'
-            if File.exist?(path)
-              content = File.read(path)
-              # Меняем платформу на 15.0
-              content.gsub!(/^#?\s*platform :ios, .*/, \"platform :ios, '15.0'\")
-              # Вставляем настройку версии во внутренний цикл Flutter
-              if !content.include?('IPHONEOS_DEPLOYMENT_TARGET')
-                content.gsub!(/flutter_additional_ios_build_settings\(target\)/) do |match|
-                  \"#{match}\n      target.build_configurations.each do |config|\n        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'\n      end\"
-                end
+          # 2. Принудительно меняем версию в проекте Xcode (Runner)
+          # Это исправляет корень проблемы, где Xcode думает, что проект под iOS 11/13
+          find ios/Runner.xcodeproj/project.pbxproj -type f -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*/IPHONEOS_DEPLOYMENT_TARGET = 15.0/g' {} +
+          
+          # 3. Создаем идеальный Podfile с нуля
+          # Мы используем 'generated_podhelpers.rb' — это современный стандарт Flutter
+          cat << EOF > ios/Podfile
+          platform :ios, '15.0'
+
+          load File.join(File.dirname(File.realpath(__FILE__)), 'Flutter', 'generated_podhelpers.rb')
+
+          target 'Runner' do
+            use_frameworks!
+            use_modular_headers!
+
+            flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+          end
+
+          post_install do |installer|
+            installer.pods_project.targets.each do |target|
+              flutter_additional_ios_build_settings(target)
+              target.build_configurations.each do |config|
+                config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
               end
-              File.write(path, content)
-              puts 'Podfile успешно исправлен под iOS 15.0'
-            else
-              puts 'Ошибка: Podfile не найден!'
-              exit 1
             end
-          "
-          
-          # 3. Теперь запускаем чистую сборку
+          end
+          EOF
+
+      - name: Build iOS
+        run: |
+          # Очистка кэша перед финальной сборкой
+          flutter clean
+          flutter pub get
           flutter build ios --release --no-codesign
 
       - name: Create IPA
