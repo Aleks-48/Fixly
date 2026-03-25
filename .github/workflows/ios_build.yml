@@ -1,14 +1,14 @@
 name: iOS Build
 
 on:
-  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой
+  workflow_dispatch: 
 
 jobs:
   build:
     runs-on: macos-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Обновили с v3 на v4
 
       - name: Install Flutter
         uses: subosito/flutter-action@v2
@@ -28,7 +28,7 @@ jobs:
           zip -r app.ipa Payload
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # ВОТ ТУТ БЫЛА ОШИБКА, исправили на v4
         with:
           name: fixly-iphone-app
           path: app.ipa
