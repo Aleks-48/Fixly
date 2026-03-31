@@ -25,7 +25,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _biometricEnabled = false;
 
   Future<void> _contactSupport() async {
-    final Uri url = Uri.parse("https://wa.me/77000000000"); 
+    final Uri url = Uri.parse("https://wa.me/77055966486"); 
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

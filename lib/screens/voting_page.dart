@@ -1,8 +1,14 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:signature/signature.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/main.dart'; // Для доступа к appLanguage
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class VotingPage extends StatefulWidget {
   final String proposalId; // ID вопроса, за который голосуем
@@ -29,7 +35,7 @@ class _VotingPageState extends State<VotingPage> {
   bool _isUploading = false;
   String? _voteSelection; // 'yes' или 'no'
 
-  // ФУНКЦИЯ СОХРАНЕНИЯ
+  // ФУНКЦИЯ СОХРАНЕНИЯ ГОЛОСА И ГЕНЕРАЦИИ PDF
   Future<void> _submitVote() async {
     if (_voteSelection == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Выберите вариант ответа")));
@@ -73,16 +79,113 @@ class _VotingPageState extends State<VotingPage> {
           'created_at': DateTime.now().toIso8601String(),
         });
 
+        // 5. ГЕНЕРИРУЕМ И ОТКРЫВАЕМ PDF-КВИТАНЦИЮ
+        await _generateAndSavePDF(signatureBytes, _voteSelection!, appLanguage.value);
+
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ваш голос принят!")));
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Ваш голос принят! Квитанция сохранена."),
+            backgroundColor: Colors.green,
+          ));
           Navigator.pop(context);
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка: $e")));
+      }
     } finally {
-      setState(() => _isUploading = false);
+      if (mounted) {
+        setState(() => _isUploading = false);
+      }
     }
+  }
+
+  // ЛОГИКА СОЗДАНИЯ PDF ФАЙЛА С КИРИЛЛИЦЕЙ И СОХРАНЕНИЯ НА УСТРОЙСТВО
+  Future<void> _generateAndSavePDF(Uint8List signatureBytes, String choice, String lang) async {
+    final pdf = pw.Document();
+    
+    // Загружаем шрифты из Google Fonts для поддержки кириллицы
+    final font = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
+    final String choiceText = choice == 'yes'
+        ? (lang == 'ru' ? 'ЗА' : 'ИӘ')
+        : (lang == 'ru' ? 'ПРОТИВ' : 'ҚАРСЫ');
+
+    // Формируем страницу
+    pdf.addPage(
+      pw.Page(
+        margin: const pw.EdgeInsets.all(32),
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text("Квитанция электронного голосования", style: pw.TextStyle(font: fontBold, fontSize: 22)),
+              pw.SizedBox(height: 10),
+              pw.Text("Форма для предоставления в ОСИ / EOSI", style: pw.TextStyle(font: font, fontSize: 12, color: PdfColors.grey700)),
+              pw.Divider(thickness: 2),
+              pw.SizedBox(height: 20),
+              
+              pw.Text("Повестка дня:", style: pw.TextStyle(font: fontBold, fontSize: 14)),
+              pw.SizedBox(height: 4),
+              pw.Text(widget.proposalTitle, style: pw.TextStyle(font: font, fontSize: 14)),
+              pw.SizedBox(height: 20),
+              
+              pw.Text("Дата и время голосования: ${DateTime.now().toString().split('.')[0]}", style: pw.TextStyle(font: font, fontSize: 12)),
+              pw.SizedBox(height: 20),
+
+              // Создаем таблицу результатов (как в официальных бланках)
+              pw.TableHelper.fromTextArray(
+                context: context,
+                cellStyle: pw.TextStyle(font: font, fontSize: 12),
+                headerStyle: pw.TextStyle(font: fontBold, fontSize: 12, color: PdfColors.white),
+                headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+                cellAlignment: pw.Alignment.centerLeft,
+                data: [
+                  ['Статус пользователя', 'Решение', 'Подпись'],
+                  ['Верифицирован\n(UID: ${Supabase.instance.client.auth.currentUser?.id?.substring(0,8) ?? "Anon"})', choiceText, ''],
+                ],
+              ),
+              
+              // Накладываем картинку подписи поверх пустой ячейки таблицы
+              pw.SizedBox(height: -45), 
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.end,
+                children: [
+                  pw.Image(pw.MemoryImage(signatureBytes), width: 100, height: 50),
+                  pw.SizedBox(width: 10),
+                ]
+              ),
+              
+              pw.Spacer(),
+              pw.Divider(),
+              pw.Text("Документ сформирован автоматически в приложении Fixly.", style: pw.TextStyle(font: font, fontSize: 10, color: PdfColors.grey)),
+            ],
+          );
+        },
+      ),
+    );
+
+    // Находим правильную папку на устройстве
+    Directory? directory;
+    if (Platform.isAndroid) {
+      // Для Android используем внешнее хранилище, чтобы файл можно было найти
+      directory = await getExternalStorageDirectory();
+    } else {
+      // Для iOS используем папку документов
+      directory = await getApplicationDocumentsDirectory();
+    }
+    
+    // Если папка не найдена, используем временную
+    final path = directory?.path ?? (await getTemporaryDirectory()).path;
+    final file = File("$path/Vote_Receipt_${DateTime.now().millisecondsSinceEpoch}.pdf");
+
+    // Записываем данные в файл
+    await file.writeAsBytes(await pdf.save());
+
+    // Вызываем системное приложение для открытия PDF
+    await OpenFile.open(file.path);
   }
 
   @override

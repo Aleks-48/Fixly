@@ -3,7 +3,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/services/pdf_report_service.dart';
-import 'package:printing/printing.dart'; // Важно для Printing.sharePdf
+import 'package:fixly_app/services/ai_service.dart'; // Новый импорт
+import 'package:printing/printing.dart'; 
 
 class ChairmanAnalyticsScreen extends StatefulWidget {
   const ChairmanAnalyticsScreen({super.key});
@@ -13,29 +14,93 @@ class ChairmanAnalyticsScreen extends StatefulWidget {
 }
 
 class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
-  // Переменная для хранения баланса (ручной ввод)
-  double _eosiBalance = 2450000; 
-  final TextEditingController _balanceController = TextEditingController();
+  // 1. ПЕРЕМЕННЫЕ ДАННЫХ (Реальные цифры для ИИ)
+  double _eosiBalance = 2450000;      // Накопительный счет (ЕОСИ)
+  double _capitalBalance = 5800000;   // Капитальный ремонт (добавили по просьбе)
   
-  // Состояние загрузки для PDF
+  final TextEditingController _balanceController = TextEditingController();
+  final TextEditingController _capitalController = TextEditingController();
+  
+  // Состояния загрузки
   bool _isGeneratingPdf = false;
+  bool _isAiLoading = false;
+  String _aiForecastText = ""; // Текст прогноза от ИИ
+
+  @override
+  void initState() {
+    super.initState();
+    // Запускаем первичный анализ при входе (можно добавить задержку или кнопку)
+    _fetchAiAnalysis();
+  }
+
+  // ФУНКЦИЯ ЗАПРОСА К GEMINI AI
+  Future<void> _fetchAiAnalysis() async {
+    setState(() {
+      _isAiLoading = true;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      // Получаем последние завершенные задачи для анализа трат
+      final List<Map<String, dynamic>> lastTasks = await supabase
+          .from('tasks')
+          .select()
+          .eq('status', 'completed')
+          .order('created_at', ascending: false)
+          .limit(5);
+
+      final result = await AIService.getChairmanFinancialAnalysis(
+        savingAccount: _eosiBalance,
+        capitalRepairAccount: _capitalBalance,
+        lang: appLanguage.value,
+        recentExpenses: lastTasks,
+      );
+
+      setState(() {
+        _aiForecastText = result;
+      });
+    } catch (e) {
+      print("AI Analysis Error: $e");
+    } finally {
+      setState(() {
+        _isAiLoading = false;
+      });
+    }
+  }
 
   // Функция для изменения баланса через диалог
   void _showEditBalanceDialog(String lang) {
     _balanceController.text = _eosiBalance.toInt().toString();
+    _capitalController.text = _capitalBalance.toInt().toString();
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(lang == 'ru' ? "Обновить баланс ЕОСИ" : "ЕОСИ балансын жаңарту"),
-        content: TextField(
-          controller: _balanceController,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            suffixText: "₸",
-            hintText: lang == 'ru' ? "Введите сумму" : "Соманы енгізіңіз",
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
+        title: Text(lang == 'ru' ? "Обновить счета" : "Шоттарды жаңарту"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _balanceController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: lang == 'ru' ? "Накопительный (ЕОСИ)" : "Жинақтаушы",
+                suffixText: "₸",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _capitalController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: lang == 'ru' ? "Капитальный ремонт" : "Күрделі жөндеу",
+                suffixText: "₸",
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -46,8 +111,10 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             onPressed: () {
               setState(() {
                 _eosiBalance = double.tryParse(_balanceController.text) ?? _eosiBalance;
+                _capitalBalance = double.tryParse(_capitalController.text) ?? _capitalBalance;
               });
               Navigator.pop(context);
+              _fetchAiAnalysis(); // Пересчитываем прогноз ИИ после смены баланса
             },
             child: Text(lang == 'ru' ? "Сохранить" : "Сақтау"),
           ),
@@ -56,60 +123,42 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  // ФУНКЦИЯ ГЕНЕРАЦИИ И ОТПРАВКИ ОТЧЕТА
+  // ФУНКЦИЯ ГЕНЕРАЦИИ И ОТПРАВКИ ОТЧЕТА (Для будущего переноса в Голосование)
   Future<void> _handlePdfGeneration(String lang) async {
     setState(() => _isGeneratingPdf = true);
 
     try {
       final supabase = Supabase.instance.client;
-
-      // 1. Получаем данные всех голосов из базы
-      final List<Map<String, dynamic>> votes = await supabase
-          .from('votes')
-          .select();
+      final List<Map<String, dynamic>> votes = await supabase.from('votes').select();
 
       if (votes.isEmpty) {
         throw lang == 'ru' ? "Нет данных для отчета" : "Есеп үшін деректер жоқ";
       }
 
-      // 2. Подготавливаем данные (скачиваем байты подписей)
       List<Map<String, dynamic>> preparedVotes = [];
       for (var v in votes) {
-        // Скачиваем подпись по URL
         final bytes = await PdfReportService.downloadSignature(v['signature_url']);
         var vCopy = Map<String, dynamic>.from(v);
         vCopy['sig_bytes'] = bytes;
         preparedVotes.add(vCopy);
       }
 
-      // 3. Создаем PDF документ через сервис
-      // ВНИМАНИЕ: Убедитесь, что в PdfReportService метод возвращает pw.Document или байты
-      // Для этого примера мы используем логику Printing.sharePdf прямо здесь для надежности
-      
       final pdfData = await PdfReportService.createPdfDocument(
         proposalTitle: lang == 'ru' ? "Протокол ОСИ: Результаты голосования" : "Мүлік иелерінің бірлестігінің хаттамасы",
         votes: preparedVotes,
       );
 
-      // 4. Открываем системное меню "Поделиться" (Share)
-      // Это позволит сохранить в файлы или отправить в WhatsApp
       await Printing.sharePdf(
         bytes: pdfData, 
         filename: 'report_osi_${DateTime.now().day}_${DateTime.now().month}.pdf'
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(lang == 'ru' ? "Отчет готов к отправке" : "Есеп жіберуге дайын"), 
-          backgroundColor: Colors.green
-        ),
+        SnackBar(content: Text(lang == 'ru' ? "Отчет готов" : "Есеп дайын"), backgroundColor: Colors.green),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("${lang == 'ru' ? 'Ошибка' : 'Қате'}: $e"), 
-          backgroundColor: Colors.red
-        ),
+        SnackBar(content: Text("Ошибка: $e"), backgroundColor: Colors.red),
       );
     } finally {
       setState(() => _isGeneratingPdf = false);
@@ -128,6 +177,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           appBar: AppBar(
             title: Text(lang == 'ru' ? "Аналитика и Прогнозы" : "Аналитика мен болжамдар"),
             centerTitle: true,
+            actions: [
+              IconButton(
+                icon: const Icon(LucideIcons.sparkles, color: Colors.blueAccent),
+                onPressed: _fetchAiAnalysis,
+              )
+            ],
           ),
           body: Stack(
             children: [
@@ -162,31 +217,31 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 1. ФИНАНСОВЫЙ БЛОК
-                        _buildFinancialOverview(_eosiBalance, totalSpent, lang),
+                        // 1. ФИНАНСОВЫЙ БЛОК (С двумя счетами)
+                        _buildFinancialOverview(_eosiBalance, _capitalBalance, totalSpent, lang),
                         
                         const SizedBox(height: 30),
                         
-                        // 2. ПРОГНОЗ РЕМОНТОВ
-                        _buildSectionHeader(lang == 'ru' ? "Прогноз ремонтов (AI)" : "Жөндеу болжамы (AI)"),
+                        // 2. ИИ-АНАЛИТИКА (Заменили старый статический блок)
+                        _buildSectionHeader(lang == 'ru' ? "Умный прогноз и аудит (Gemini AI)" : "Ақылды болжам (Gemini AI)"),
+                        _buildAIAdviceCard(_aiForecastText, _isAiLoading, lang, isDark),
+
+                        const SizedBox(height: 30),
+
+                        // 3. ПРОГНОЗ РЕМОНТОВ
+                        _buildSectionHeader(lang == 'ru' ? "Приоритетные задачи" : "Басым тапсырмалар"),
                         _buildRepairPredictor(_eosiBalance, lang),
 
                         const SizedBox(height: 30),
 
-                        // 3. ЗДОРОВЬЕ ДОМА
+                        // 4. ЗДОРОВЬЕ ДОМА
                         _buildSectionHeader(lang == 'ru' ? "Состояние жилого объекта" : "Тұрғын үй жағдайы"),
                         _buildHealthIndicator(health, activeCount, lang),
                         
                         const SizedBox(height: 30),
 
-                        // 4. СОВЕТ ОТ ИИ
-                        _buildSectionHeader(lang == 'ru' ? "Рекомендация системы" : "Жүйе ұсынысы"),
-                        _buildAIAdviceCard(totalSpent, lang, isDark),
-
-                        const SizedBox(height: 30),
-
                         // 5. ДЕТАЛЬНЫЙ АНАЛИЗ ЦЕН
-                        _buildSectionHeader(lang == 'ru' ? "Анализ цен по рынку" : "Нарықтық баға анализі"),
+                        _buildSectionHeader(lang == 'ru' ? "Анализ цен по рынку (РК)" : "Нарықтық баға анализі"),
                         _buildMarketComparison(tasks, lang, isDark),
 
                         const SizedBox(height: 30),
@@ -196,7 +251,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
                         const SizedBox(height: 30),
 
-                        // 7. КНОПКА ОТЧЕТА
+                        // 7. КНОПКА ОТЧЕТА (В будущем перенесешь ее в раздел голосования)
                         _buildReportButton(lang),
                         
                         const SizedBox(height: 50),
@@ -206,7 +261,6 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                 },
               ),
               
-              // АНИМАЦИЯ ЗАГРУЗКИ PDF (OVERLAY)
               if (_isGeneratingPdf)
                 Container(
                   color: Colors.black.withOpacity(0.6),
@@ -214,24 +268,11 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 5,
-                        ),
+                        const CircularProgressIndicator(color: Colors.white),
                         const SizedBox(height: 25),
                         Text(
-                          lang == 'ru' ? "Сбор данных и генерация PDF..." : "Деректерді жинау және PDF жасау...",
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white, 
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          lang == 'ru' ? "Это может занять до 10 секунд" : "Бұл 10 секундқа дейін созылуы мүмкін",
-                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                          lang == 'ru' ? "Создание протокола..." : "Хаттама жасау...",
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -244,63 +285,83 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  // --- ВСПОМОГАТЕЛЬНЫЕ ВИДЖЕТЫ (МЕТОДЫ ИНТЕРФЕЙСА) ---
+  // --- ОБНОВЛЕННЫЕ ВИДЖЕТЫ ---
 
-  Widget _buildFinancialOverview(double balance, double spent, String lang) {
+  Widget _buildFinancialOverview(double balance, double capital, double spent, String lang) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2), 
-            blurRadius: 15, 
-            offset: const Offset(0, 8)
-          )
-        ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
         children: [
           GestureDetector(
             onTap: () => _showEditBalanceDialog(lang),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      lang == 'ru' ? "СЧЕТ ЕОСИ" : "ЕОСИ ШОТЫ", 
-                      style: const TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(LucideIcons.pencil, color: Colors.blueAccent, size: 10),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "${balance.toInt()} ₸", 
-                  style: const TextStyle(color: Colors.greenAccent, fontSize: 24, fontWeight: FontWeight.bold)
-                ),
+                _miniBalance(lang == 'ru' ? "НАКОПИТЕЛЬНЫЙ" : "ЖИНАҚТАУШЫ", balance, Colors.greenAccent),
+                _miniBalance(lang == 'ru' ? "КАПИТАЛЬНЫЙ" : "КҮРДЕЛІ", capital, Colors.purpleAccent),
               ],
             ),
           ),
-          Container(width: 1, height: 45, color: Colors.white12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          const Divider(color: Colors.white12, height: 30),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Text(lang == 'ru' ? "ОБЩИЙ РАСХОД" : "ЖАЛПЫ ШЫҒЫН", style: const TextStyle(color: Colors.white60, fontSize: 10)),
+              Text("${spent.toInt()} ₸", style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 18)),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _miniBalance(String label, double val, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 9, letterSpacing: 1)),
+        const SizedBox(height: 4),
+        Text("${val.toInt()} ₸", style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  // ОБНОВЛЕННЫЙ КАРТОЧКА С ИИ-ТЕКСТОМ
+  Widget _buildAIAdviceCard(String text, bool isLoading, String lang, bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(isDark ? 0.1 : 0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(LucideIcons.sparkles, color: Colors.blueAccent, size: 18),
+              const SizedBox(width: 8),
               Text(
-                lang == 'ru' ? "ПОТРАЧЕНО" : "ЖҰМСАЛДЫ", 
-                style: const TextStyle(color: Colors.white60, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "${spent.toInt()} ₸", 
-                style: const TextStyle(color: Colors.blueAccent, fontSize: 24, fontWeight: FontWeight.bold)
+                lang == 'ru' ? "АНАЛИЗ ДАННЫХ" : "ДЕРЕКТЕРДІ ТАЛДАУ",
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueAccent),
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          isLoading 
+            ? const LinearProgressIndicator(backgroundColor: Colors.transparent)
+            : Text(
+                text.isEmpty 
+                  ? (lang == 'ru' ? "Нажмите на иконку ✨ для получения прогноза" : "Болжам алу үшін ✨ белгішесін басыңыз")
+                  : text,
+                style: TextStyle(fontSize: 13, height: 1.5, color: isDark ? Colors.white70 : Colors.black87),
+              ),
         ],
       ),
     );
@@ -309,27 +370,20 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   Widget _buildRepairPredictor(double balance, String lang) {
     List<Map<String, dynamic>> predictions = [];
     if (balance > 1000000) {
-      predictions.add({'title': lang == 'ru' ? 'Обновление кровли' : 'Шатырды жаңарту', 'icon': LucideIcons.home, 'cost': '~950 000 ₸'});
-      predictions.add({'title': lang == 'ru' ? 'Ремонт подъезда' : 'Кіреберісті жөндеу', 'icon': LucideIcons.paintBucket, 'cost': '~400 000 ₸'});
-    } else if (balance > 200000) {
-      predictions.add({'title': lang == 'ru' ? 'Замена освещения' : 'Жарықты ауыстыру', 'icon': LucideIcons.lightbulb, 'cost': '~120 000 ₸'});
+      predictions.add({'title': lang == 'ru' ? 'Обновление кровли' : 'Шатырды жаңарту', 'icon': LucideIcons.home, 'cost': '~950k'});
+      predictions.add({'title': lang == 'ru' ? 'Ремонт подъезда' : 'Кіреберіс', 'icon': LucideIcons.paintBucket, 'cost': '~400k'});
     } else {
-      predictions.add({'title': lang == 'ru' ? 'Мелкий ремонт' : 'Ұсақ-түйек жөндеу', 'icon': LucideIcons.wrench, 'cost': '< 50 000 ₸'});
+      predictions.add({'title': lang == 'ru' ? 'Замена освещения' : 'Жарық', 'icon': LucideIcons.lightbulb, 'cost': '~120k'});
     }
 
     return Column(
-      children: predictions.map((p) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.blue.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blue.withOpacity(0.1)),
-        ),
+      children: predictions.map((p) => Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: ListTile(
-          leading: Icon(p['icon'] as IconData, color: Colors.blue),
-          title: Text(p['title'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(lang == 'ru' ? "Рекомендовано AI" : "AI ұсынған"),
-          trailing: Text(p['cost'] as String, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+          leading: Icon(p['icon'] as IconData, color: Colors.blue, size: 20),
+          title: Text(p['title'] as String, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          trailing: Text(p['cost'] as String, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
         ),
       )).toList(),
     );
@@ -352,7 +406,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(lang == 'ru' ? "Активных задач" : "Белсенді тапсырма", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  Text(lang == 'ru' ? "Активных задач" : "Белсенді", style: const TextStyle(color: Colors.grey, fontSize: 12)),
                   Text("$active", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
               )
@@ -361,35 +415,10 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           const SizedBox(height: 15),
           LinearProgressIndicator(
             value: health, 
-            minHeight: 8, 
+            minHeight: 6, 
             borderRadius: BorderRadius.circular(10), 
             backgroundColor: color.withOpacity(0.1), 
             color: color
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAIAdviceCard(double spent, String lang, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.orange.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.orange.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          const Icon(LucideIcons.sparkles, color: Colors.orange),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Text(
-              spent > 500000 
-                ? (lang == 'ru' ? "Расходы выше среднего. Проверьте сметы сантехников." : "Шығындар жоғары. Сантехника сметасын тексеріңіз.")
-                : (lang == 'ru' ? "Бюджет в норме. Хорошее время для плановой диагностики." : "Бюджет қалыпты. Жоспарлы диагностика үшін жақсы уақыт."),
-              style: const TextStyle(fontSize: 13),
-            ),
           ),
         ],
       ),
@@ -422,18 +451,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            Text(label, style: const TextStyle(fontSize: 12)),
             Text(diff, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
           ],
         ),
         const SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: val / 1.5, 
-          color: color, 
-          backgroundColor: color.withOpacity(0.1), 
-          minHeight: 5, 
-          borderRadius: BorderRadius.circular(5)
-        ),
+        LinearProgressIndicator(value: val / 1.5, color: color, backgroundColor: color.withOpacity(0.1), minHeight: 4),
       ],
     );
   }
@@ -443,54 +466,32 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionHeader(lang == 'ru' ? "Последние отчеты" : "Соңғы есептер"),
+        _buildSectionHeader(lang == 'ru' ? "Последние оплаты" : "Соңғы төлемдер"),
         if (lastTasks.isEmpty) 
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Text(
-              lang == 'ru' ? "Нет завершенных работ" : "Аяқталған жұмыс жоқ",
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ),
+          const Text("Нет данных", style: TextStyle(color: Colors.grey, fontSize: 12)),
         ...lastTasks.map((t) => ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(LucideIcons.checkCircle, color: Colors.green, size: 20),
-          title: Text(t['category'] ?? "Ремонт", style: const TextStyle(fontSize: 14)),
-          trailing: Text("${t['final_price']} ₸", style: const TextStyle(fontWeight: FontWeight.bold)),
+          leading: const Icon(LucideIcons.checkCircle, color: Colors.green, size: 18),
+          title: Text(t['category'] ?? "Ремонт", style: const TextStyle(fontSize: 13)),
+          trailing: Text("${t['final_price']} ₸", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
         )),
       ],
     );
   }
 
   Widget _buildReportButton(String lang) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
       height: 55,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF00B0FF), Color(0xFF0081CB)],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF00B0FF).withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4)
-          )
-        ],
-      ),
       child: ElevatedButton.icon(
         onPressed: _isGeneratingPdf ? null : () => _handlePdfGeneration(lang),
-        icon: const Icon(LucideIcons.fileDown, color: Colors.white),
+        icon: const Icon(LucideIcons.fileText, color: Colors.white),
         label: Text(
-          lang == 'ru' ? "СКАЧАТЬ И ПОДЕЛИТЬСЯ ОТЧЕТОМ" : "ЕСЕПТІ ЖҮКТЕУ ЖӘНЕ БӨЛІСУ", 
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+          lang == 'ru' ? "СКАЧАТЬ ПРОТОКОЛ ГОЛОСОВАНИЯ" : "ДАУЫС БЕРУ ХАТТАМАСЫН ЖҮКТЕУ", 
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)
         ),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent, 
-          shadowColor: Colors.transparent,
+          backgroundColor: Colors.blueAccent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
       ),
@@ -498,10 +499,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   }
 
   Widget _buildSectionHeader(String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 15, left: 4),
-    child: Text(
-      title, 
-      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
-    ),
+    padding: const EdgeInsets.only(bottom: 12, left: 4),
+    child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
   );
 }

@@ -12,10 +12,16 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  String userRoleLocal = "master"; // По умолчанию мастер
+  String userRoleLocal = "master"; 
   String userName = "Загрузка...";
   String userBin = ""; 
-  String orgName = ""; // Поле для названия ОСИ
+  String orgName = ""; 
+  // Поля адреса
+  String userCity = "";
+  String userStreet = "";
+  String userHouse = "";
+  String userApartment = "";
+
   bool _isLoading = true;
   bool _isOnline = true;
 
@@ -25,27 +31,23 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadUserData();
   }
 
-  // Загрузка данных профиля из Supabase
   Future<void> _loadUserData() async {
     final supabase = Supabase.instance.client;
     final user = supabase.auth.currentUser;
     
     if (user != null) {
       try {
-        // Запрашиваем данные профиля
         final data = await supabase
             .from('profiles')
-            .select('role, user_type, name, first_name, last_name, avg_rating, bin, org_name, is_online') 
+            .select('role, user_type, name, first_name, last_name, avg_rating, bin, org_name, is_online, city, street, house, apartment') 
             .eq('id', user.id)
             .maybeSingle();
         
         if (mounted) {
           setState(() {
-            // Определяем роль (нормализуем к нижнему регистру)
             final String rawRole = data?['role'] ?? data?['user_type'] ?? "master";
             userRoleLocal = rawRole.toString().toLowerCase();
             
-            // Логика отображения имени
             if (data?['first_name'] != null) {
               userName = "${data!['first_name']} ${data['last_name'] ?? ''}".trim();
             } else {
@@ -54,9 +56,13 @@ class _ProfilePageState extends State<ProfilePage> {
 
             userBin = data?['bin']?.toString() ?? "";
             orgName = data?['org_name']?.toString() ?? "";
+            userCity = data?['city']?.toString() ?? "";
+            userStreet = data?['street']?.toString() ?? "";
+            userHouse = data?['house']?.toString() ?? "";
+            userApartment = data?['apartment']?.toString() ?? "";
+            
             _isOnline = data?['is_online'] ?? true;
             
-            // Обновляем глобальные переменные (из main.dart)
             userRating.value = (data?['avg_rating'] ?? 0.0).toDouble();
             userRole.value = userRoleLocal;
             
@@ -70,25 +76,25 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  // Функция для редактирования названия ОСИ или БИН/ИИН
-  Future<void> _showEditDialog(String currentVal, bool isOsiName) async {
+  Future<void> _showEditFieldDialog(String currentVal, String title, String dbColumn) async {
     final controller = TextEditingController(text: currentVal);
-    final String title = isOsiName ? "Название ОСИ/ЖК" : "БИН / ИИН";
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           "Изменить $title", 
           style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 18)
         ),
         content: TextField(
           controller: controller,
+          autofocus: true,
           style: TextStyle(color: isDark ? Colors.white : Colors.black87),
           decoration: InputDecoration(
-            hintText: "Введите значение",
+            hintText: "Введите $title",
             hintStyle: TextStyle(color: isDark ? Colors.white24 : Colors.black38),
             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.blue.withOpacity(0.5))),
             focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.blue)),
@@ -97,32 +103,41 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context), 
-            child: const Text("Отмена")
+            child: const Text("Отмена", style: TextStyle(color: Colors.grey))
           ),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+            ),
             onPressed: () async {
               final supabase = Supabase.instance.client;
               final user = supabase.auth.currentUser;
-              final String column = isOsiName ? 'org_name' : 'bin';
-              
               try {
-                await supabase.from('profiles').update({column: controller.text}).eq('id', user!.id);
+                await supabase.from('profiles').update({dbColumn: controller.text}).eq('id', user!.id);
                 if (mounted) {
                   Navigator.pop(context);
                   _loadUserData(); 
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Данные обновлены"), backgroundColor: Colors.green),
+                  );
                 }
               } catch (e) {
                 debugPrint("Ошибка обновления: $e");
+                if (mounted) {
+                   ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Ошибка сохранения: $e"), backgroundColor: Colors.red),
+                  );
+                }
               }
             },
-            child: const Text("Сохранить"),
+            child: const Text("Сохранить", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  // Переключение статуса онлайн
   Future<void> _toggleOnlineStatus(bool val) async {
     setState(() => _isOnline = val);
     try {
@@ -145,8 +160,6 @@ class _ProfilePageState extends State<ProfilePage> {
     final Color cardColor = isDark ? const Color(0xFF1C1C1E) : Colors.white;
     final Color textColor = isDark ? Colors.white : Colors.black87;
     const Color accentBlue = Color(0xFF3B82F6);
-    
-    final user = Supabase.instance.client.auth.currentUser;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
@@ -191,9 +204,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Column(
                     children: [
                       const SizedBox(height: 10),
-                      _buildHeaderSection(user?.email, accentBlue, lang, isDark),
+                      // Вызываем заголовок БЕЗ почты
+                      _buildHeaderSection(accentBlue, lang, isDark),
                       
-                      // Статистика отображается только для МАСТЕРОВ
                       if (userRoleLocal == 'master') ...[
                         const SizedBox(height: 25),
                         _buildStatsHighlightCard(accentBlue, lang),
@@ -203,49 +216,69 @@ class _ProfilePageState extends State<ProfilePage> {
                       _buildStatusCard(cardColor, lang, isDark),
                       const SizedBox(height: 25),
 
-                      // ИНФОРМАЦИОННЫЙ БЛОК
                       _buildSectionLabel(
-                        (userRoleLocal == 'osi' || userRoleLocal == 'chairman')
-                          ? (lang == 'ru' ? "ИНФОРМАЦИЯ ОБ ОСИ" : "ОСИ ТУРАЛЫ АҚПАРАТ")
+                        (userRoleLocal == 'osi' || userRoleLocal == 'chairman' || userRoleLocal == 'resident')
+                          ? (lang == 'ru' ? "АДРЕСНЫЕ ДАННЫЕ" : "МЕКЕН-ЖАЙ МӘЛІМЕТТЕРІ")
                           : (lang == 'ru' ? "ДАННЫЕ ПРОФИЛЯ" : "ПРОФИЛЬ ДЕРЕКТЕРІ"),
                         isDark
                       ),
                       
                       _buildCardGroup(cardColor, isDark, [
-                        // Если роль ОСИ или Председатель, выводим название организации
-                        if (userRoleLocal == 'osi' || userRoleLocal == 'chairman')
+                        if (userRoleLocal == 'osi' || userRoleLocal == 'chairman' || userRoleLocal == 'resident')
                           _buildListTile(
                             LucideIcons.building, 
                             lang == 'ru' ? "Название ОСИ / ЖК" : "ОСИ / ТҮК атауы", 
                             orgName.isEmpty ? (lang == 'ru' ? "Нажмите для ввода" : "Енгізу үшін басыңыз") : orgName,
                             isDark: isDark,
                             isEditable: true,
-                            onTap: () => _showEditDialog(orgName, true),
-                          )
-                        else
-                          // Для Мастеров и Жителей выводим БИН/ИИН
+                            onTap: () => _showEditFieldDialog(orgName, "ОСИ / ЖК", 'org_name'),
+                          ),
+                        
+                        if (userRoleLocal == 'master')
                           _buildListTile(
                             LucideIcons.contact2, 
                             lang == 'ru' ? "БИН / ИИН" : "БСН / ЖСН", 
                             userBin.isEmpty ? (lang == 'ru' ? "Не указан" : "Көрсетілмеген") : userBin,
                             isDark: isDark,
                             isEditable: true,
-                            onTap: () => _showEditDialog(userBin, false),
+                            onTap: () => _showEditFieldDialog(userBin, "БИН / ИИН", 'bin'),
                           ),
 
                         _buildListTile(
+                          LucideIcons.map, 
+                          lang == 'ru' ? "Город" : "Қала", 
+                          userCity.isEmpty ? "Не указан" : userCity,
+                          isDark: isDark,
+                          isEditable: true,
+                          onTap: () => _showEditFieldDialog(userCity, "Город", 'city'),
+                        ),
+
+                        _buildListTile(
                           LucideIcons.mapPin, 
-                          lang == 'ru' ? "Адрес" : "Мекен-жай", 
-                          "Казахстан, Акмолинская область",
-                          isDark: isDark
+                          lang == 'ru' ? "Улица и дом" : "Көше мен үй", 
+                          "${userStreet.isEmpty ? '...' : userStreet}, ${userHouse.isEmpty ? '...' : userHouse}",
+                          isDark: isDark,
+                          isEditable: true,
+                          onTap: () async {
+                             await _showEditFieldDialog(userStreet, "Улицу", 'street');
+                             if (mounted) await _showEditFieldDialog(userHouse, "Дом", 'house');
+                          },
+                        ),
+
+                        _buildListTile(
+                          LucideIcons.home, 
+                          lang == 'ru' ? "Квартира" : "Пәтер", 
+                          userApartment.isEmpty ? "Не указано" : "Кв. $userApartment",
+                          isDark: isDark,
+                          isEditable: true,
+                          onTap: () => _showEditFieldDialog(userApartment, "Квартиру", 'apartment'),
                         ),
                       ]),
 
                       const SizedBox(height: 25),
 
-                      // Портфолио только для Мастеров
                       if (userRoleLocal == 'master')
-                        _buildPortfolioBlock(lang, user?.id ?? "", cardColor, isDark),
+                        _buildPortfolioBlock(lang, Supabase.instance.client.auth.currentUser?.id ?? "", cardColor, isDark),
 
                       const SizedBox(height: 120), 
                     ],
@@ -257,12 +290,10 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  // --- UI КОМПОНЕНТЫ (Хелперы) ---
-
-  Widget _buildHeaderSection(String? email, Color accent, String lang, bool isDark) {
-    bool isVerified = userBin.length == 12;
+  // Обновленный заголовок: Чисто Имя и Роль
+  Widget _buildHeaderSection(Color accent, String lang, bool isDark) {
+    bool isVerified = userBin.length == 12 || orgName.isNotEmpty;
     
-    // Определение заголовка роли
     String roleTitle = "";
     Color roleColor = Colors.orange;
 
@@ -302,15 +333,13 @@ class _ProfilePageState extends State<ProfilePage> {
           ],
         ),
         const SizedBox(height: 16),
+        // Только имя пользователя
         Text(
           userName, 
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)
         ),
-        Text(
-          email ?? "", 
-          style: TextStyle(color: isDark ? Colors.grey : Colors.grey[600], fontSize: 14)
-        ),
-        const SizedBox(height: 15),
+        const SizedBox(height: 12),
+        // Только роль в плашке
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
           decoration: BoxDecoration(
@@ -319,7 +348,7 @@ class _ProfilePageState extends State<ProfilePage> {
             border: Border.all(color: roleColor.withOpacity(0.5)),
           ),
           child: Text(roleTitle, 
-              style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 12)),
+            style: TextStyle(color: roleColor, fontWeight: FontWeight.bold, fontSize: 13)),
         ),
       ],
     );
