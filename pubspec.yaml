@@ -21,6 +21,8 @@ dependencies:
   provider: ^6.1.5+1
   shared_preferences: ^2.5.4
   open_file: ^3.3.0
+  flutter_launcher_icons: ^0.13.1
+
   
   # Карты и геолокация
   flutter_map: ^7.0.2
@@ -60,3 +62,11 @@ flutter:
     - assets/sounds/dragon-studio-new-notification-3-398649.mp3
     - assets/sounds/ribhavagrawal-notification-sound-type-20-no-copyright-410276.mp3
     - assets/sounds/tutorial/
+    - assets/logo.png
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/logo.png"

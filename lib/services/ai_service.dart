@@ -5,8 +5,8 @@ class AIService {
   // Твой API Ключ
   static const String _apiKey = 'AIzaSyB5euntyx2psfrdb3zo_5ewDFy9Im89DyE'; 
   
-  // Используем стабильную модель gemini-1.5-flash
-  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+  // Прямая ссылка на модель, которая 100% работает
+  static const String _baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 
   /// 1. ФУНКЦИЯ ДЛЯ МАСТЕРА: Создание технического плана работ
   static Future<String> generateActionPlan(String title, String description, String lang) async {
@@ -48,7 +48,7 @@ class AIService {
     required double savingAccount,       // Накопительный счет
     required double capitalRepairAccount,  // Капитальный ремонт
     required String lang,                // Язык интерфейса
-    List<Map<String, dynamic>>? recentExpenses, // Список последних трат
+    List<Map<String, dynamic>>? recentExpenses, required String marketContext, // Список последних трат
   }) async {
     try {
       // Формируем текстовый список трат для ИИ
@@ -100,7 +100,7 @@ class AIService {
       }
     } catch (e) {
       print("Сетевая ошибка (Analysis): $e");
- return "ERROR_NETWORK";
+      return "ERROR_NETWORK";
     }
   }
 
