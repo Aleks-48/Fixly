@@ -7,12 +7,12 @@ import 'dart:async';
 // Импорты страниц
 import 'package:fixly_app/screens/orders_page.dart';
 import 'package:fixly_app/screens/masters_list_screen.dart';
-import 'package:fixly_app/screens/profile/My_Buildings_Screen.dart';
+import 'package:fixly_app/screens/profile/my_Buildings_Screen.dart';
 import 'package:fixly_app/screens/chat_list_screen.dart';
 import 'package:fixly_app/screens/profile_page.dart';
 import 'package:fixly_app/screens/income_screen.dart';
 import 'package:fixly_app/screens/create_order_page.dart';
-import 'package:fixly_app/screens/profile/Chairman_Analytics_Screen.dart';
+import 'package:fixly_app/screens/profile/chairman_Analytics_Screen.dart';
 import 'package:fixly_app/screens/documents_screen.dart';
 import 'package:fixly_app/screens/library_screen.dart';
 import 'package:fixly_app/screens/resident_home_page.dart'; 
@@ -93,59 +93,228 @@ class _MainWrapperState extends State<MainWrapper> {
     }
   }
 
+  // --- ЛОГИКА ЦЕНТРАЛЬНОЙ КНОПКИ "+" ---
+  void _onPlusButtonPressed() {
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Если это ОБЫЧНЫЙ ЖИТЕЛЬ - сразу на создание заявки
+    if (_userRole == 'resident') {
+      Navigator.push(
+        context, 
+        MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: ''))
+      );
+      return;
+    }
+
+    // Если это ПРЕДСЕДАТЕЛЬ - показываем меню выбора
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  appLanguage.value == 'ru' ? "Что создать?" : "Не жасау керек?",
+                  style: TextStyle(
+                    fontSize: 20, 
+                    fontWeight: FontWeight.bold, 
+                    color: isDark ? Colors.white : Colors.black
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _buildMenuOption(
+                  icon: LucideIcons.wrench,
+                  title: appLanguage.value == 'ru' ? "Заявка (Service)" : "Өтінім",
+                  color: Colors.blueAccent,
+                  isDark: isDark,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '')));
+                  },
+                ),
+                _buildMenuOption(
+                  icon: LucideIcons.megaphone,
+                  title: appLanguage.value == 'ru' ? "Объявление (News)" : "Хабарландыру",
+                  color: Colors.orangeAccent,
+                  isDark: isDark,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAddAnnouncementDialog();
+                  },
+                ),
+_buildMenuOption(
+                  icon: LucideIcons.checkSquare, // Исправлено с howToVote на checkSquare
+                  title: appLanguage.value == 'ru' ? "Голосование (Voting)" : "Дауыс беру",
+                  color: Colors.greenAccent,
+                  isDark: isDark,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showAddProposalDialog();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMenuOption({
+    required IconData icon, 
+    required String title, 
+    required Color color, 
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: color.withOpacity(0.1),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w500)),
+      trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+      onTap: onTap,
+    );
+  }
+
+  // --- ДИАЛОГ СОЗДАНИЯ ОБЪЯВЛЕНИЯ ---
+void _showAddAnnouncementDialog() async {
+    final TextEditingController titleController = TextEditingController();
+    final TextEditingController contentController = TextEditingController();
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // 1. Сначала узнаем building_id самого председателя
+    final user = Supabase.instance.client.auth.currentUser;
+    final userData = await Supabase.instance.client
+        .from('profiles')
+        .select('building_id')
+        .eq('id', user!.id)
+        .single();
+    
+    final String? myBuildingId = userData['building_id']?.toString();
+
+    if (myBuildingId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Ошибка: У вас не привязан дом в профиле!")),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1F2937) : Colors.white,
+        title: Text(appLanguage.value == 'ru' ? "Новое объявление" : "Жаңа хабарландыру"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: titleController, decoration: const InputDecoration(hintText: "Заголовок")),
+            TextField(controller: contentController, maxLines: 3, decoration: const InputDecoration(hintText: "Текст")),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Отмена")),
+          ElevatedButton(
+            onPressed: () async {
+              if (titleController.text.isNotEmpty) {
+                // 2. Добавляем building_id при сохранении
+                await Supabase.instance.client.from('announcements').insert({
+                  'title': titleController.text,
+                  'content': contentController.text,
+                  'author_id': user.id,
+                  'building_id': myBuildingId, // ВАЖНО: привязка к дому
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text("Создать"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- ДИАЛОГ СОЗДАНИЯ ГОЛОСОВАНИЯ ---
+  void _showAddProposalDialog() {
+    final TextEditingController titleController = TextEditingController();
+    final bool isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: isDark ? const Color(0xFF1F2937) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          appLanguage.value == 'ru' ? "Тема голосования" : "Дауыс беру тақырыбы",
+          style: TextStyle(color: isDark ? Colors.white : Colors.black),
+        ),
+        content: TextField(
+          controller: titleController,
+          style: TextStyle(color: isDark ? Colors.white : Colors.black),
+          decoration: InputDecoration(
+            hintText: "Например: Ремонт лифта",
+            hintStyle: const TextStyle(color: Colors.grey),
+            filled: true,
+            fillColor: isDark ? Colors.black26 : Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Отмена")),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            onPressed: () async {
+              if (titleController.text.isNotEmpty) {
+                await Supabase.instance.client.from('proposals').insert({
+                  'title': titleController.text,
+                  'author_id': Supabase.instance.client.auth.currentUser?.id,
+                  'is_active': true,
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Голосование запущено!")));
+              }
+            },
+            child: const Text("Запустить", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- ТЬЮТОРИАЛ ЛОГИКА ---
   void _playStepVoice(int step, String lang) async {
     String cleanLang = _getCleanLang(lang);
     String fileName = "${cleanLang}_step$step.mp3"; 
-    
     try {
       await _audioPlayer.stop(); 
       await _audioPlayer.play(AssetSource("sounds/tutorial/$fileName"));
-    } catch (e) {
-      debugPrint("Файл озвучки не найден: $fileName");
-    }
+    } catch (e) { debugPrint("Файл озвучки не найден: $fileName"); }
   }
 
   void _nextTutorialStep() {
     final lang = appLanguage.value; 
-    
     setState(() {
       _tutorialStep++;
-      
       switch (_tutorialStep) {
         case 1:
           _selectedIndex = 0; 
-          _helperMessage = {
-            'ru': 'Это ваша главная страница с важными уведомлениями.',
-            'kk': 'Бұл маңызды хабарландырулары бар басты бетіңіз.',
-          };
+          _helperMessage = {'ru': 'Это ваша главная страница.', 'kk': 'Бұл басты бетіңіз.'};
           break;
         case 2:
           _selectedIndex = 1; 
-          _helperMessage = {
-            'ru': _userRole == 'master' ? 'Тут ваш доход.' : 'Тут список мастеров дома.',
-            'kk': _userRole == 'master' ? 'Мұнда сіздің табысыңыз.' : 'Мұнда үй шеберлерінің тізімі.',
-          };
+          _helperMessage = {'ru': 'Тут список мастеров.', 'kk': 'Мұнда шеберлер тізімі.'};
           break;
         case 3:
-          // ШАГ: ОТКРЫВАЕМ БУРГЕР ДЛЯ ОБЪЯСНЕНИЯ
           _scaffoldKey.currentState?.openDrawer();
-          _helperMessage = {
-            'ru': 'В этом меню находятся документы, голосования и аналитика.',
-            'kk': 'Бұл мәзірде құжаттар, дауыс беру және аналитика орналасқан.',
-          };
-          break;
-        case 4:
-          _selectedIndex = 3; // Переходим в профиль
-          _helperMessage = {
-            'ru': 'Ваш профиль. Для председателя мы убрали лишнюю статистику.',
-            'kk': 'Сіздің профиліңіз. Төраға үшін артық статистиканы алып тастадық.',
-          };
-          break;
-        case 5: 
-          _helperMessage = {
-            'ru': 'Обучение завершено! Я всегда рядом в углу экрана.',
-            'kk': 'Оқу аяқталды! Мен әрқашан экран бұрышындамын.',
-          };
+          _helperMessage = {'ru': 'Боковое меню с инструментами.', 'kk': 'Құралдары бар бүйірлік мәзір.'};
           break;
         default:
           if (_scaffoldKey.currentState?.isDrawerOpen ?? false) Navigator.pop(context);
@@ -155,7 +324,6 @@ class _MainWrapperState extends State<MainWrapper> {
           _audioPlayer.stop();
           return;
       }
-      
       _playStepVoice(_tutorialStep, lang);
     });
   }
@@ -184,7 +352,6 @@ class _MainWrapperState extends State<MainWrapper> {
           key: _scaffoldKey,
           extendBody: true,
           backgroundColor: isDark ? const Color(0xFF0F0F0F) : Colors.white,
-          
           appBar: AppBar(
             backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
             elevation: 0,
@@ -194,17 +361,14 @@ class _MainWrapperState extends State<MainWrapper> {
             ),
             title: Text(
               _userRole == 'chairman' ? "Fixly ОСИ" : "Fixly", 
-              style: const TextStyle(fontWeight: FontWeight.bold)
+              style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)
             ),
             centerTitle: true,
           ),
-
           drawer: _buildDrawer(cleanLang, isDark),
-
           body: Stack(
             children: [
               IndexedStack(index: _selectedIndex, children: pages),
-              
               Positioned(
                 bottom: 110, 
                 right: 16,
@@ -217,22 +381,24 @@ class _MainWrapperState extends State<MainWrapper> {
                     const SizedBox(height: 10),
                     ElevatedButton(
                       onPressed: _nextTutorialStep,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
                       child: Text(cleanLang == 'kk' ? 'Келесі' : 'Далее', style: const TextStyle(color: Colors.white)),
                     )
                   ] : null,
-                  onTap: () {
-                    if (!_isTutorialActive) _showHelperMenu(context, lang);
-                  }, 
+                  onTap: () { if (!_isTutorialActive) _showHelperMenu(context, lang); }, 
                 ),
               ),
             ],
           ),
           bottomNavigationBar: _buildBottomBar(isDark, cleanLang),
-          floatingActionButton: (_userRole == 'chairman' || _userRole == 'resident') ? _buildFAB() : null,
+          floatingActionButton: (_userRole == 'chairman' || _userRole == 'resident') 
+              ? FloatingActionButton(
+                  onPressed: _onPlusButtonPressed, // ВЫЗОВ НОВОЙ ЛОГИКИ
+                  backgroundColor: Colors.blueAccent,
+                  shape: const CircleBorder(),
+                  child: const Icon(Icons.add, color: Colors.white, size: 28),
+                ) 
+              : null,
           floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
         );
       },
@@ -258,7 +424,7 @@ class _MainWrapperState extends State<MainWrapper> {
             title: Text(lang == 'kk' ? "Дауыс беру" : "Голосование"),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const VotingPage()));
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const VotingPage(proposalId: '', proposalTitle: '',)));
             },
           ),
           if (_userRole == 'resident')
@@ -335,15 +501,6 @@ class _MainWrapperState extends State<MainWrapper> {
           Text(label, style: TextStyle(fontSize: 10, color: isSelected ? Colors.blueAccent : Colors.grey)),
         ],
       ),
-    );
-  }
-
-  Widget _buildFAB() {
-    return FloatingActionButton(
-      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '',))),
-      backgroundColor: Colors.blueAccent,
-      shape: const CircleBorder(),
-      child: const Icon(Icons.add, color: Colors.white, size: 28),
     );
   }
 

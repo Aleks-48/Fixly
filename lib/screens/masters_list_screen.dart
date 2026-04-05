@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/utils/app_texts.dart';
-import 'package:fixly_app/screens/Master_Detail_Page.dart';
+import 'package:fixly_app/screens/master_Detail_Page.dart';
 
 class MastersListScreen extends StatefulWidget {
   const MastersListScreen({super.key});

@@ -28,7 +28,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     try {
       final user = supabase.auth.currentUser;
       if (user != null) {
-        // Запрос профиля с подгрузкой данных о доме (через foreign key)
+        // Запрос профиля с подгрузкой данных о доме
         final data = await supabase
             .from('profiles')
             .select('building_id, buildings(name)')
@@ -132,7 +132,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                         ),
                         const SizedBox(height: 8),
 
-                        // 3. Список объявлений
+                        // 3. Список объявлений (Работает через Stream)
                         _buildAnnouncementsList(isDark, lang),
                         
                         const SizedBox(height: 120),
@@ -209,15 +209,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget _buildAnnouncementsList(bool isDark, String lang) {
+    // Если у пользователя нет привязанного дома в профиле
     if (_buildingId == null) {
       return _buildEmptyState(lang, isDark, true);
     }
 
+    // Стрим для получения объявлений в реальном времени
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('announcements')
           .stream(primaryKey: ['id'])
-          .eq('building_id', _buildingId!)
+          .eq('building_id', _buildingId!) // Фильтр по дому
           .order('created_at', ascending: false),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -236,7 +238,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         return ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
+          itemCount: items.length > 5 ? 5 : items.length, // Показываем последние 5
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
             final item = items[index];
@@ -272,7 +274,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                           ),
                         ),
                         const Spacer(),
-                        const Icon(LucideIcons.moreHorizontal, size: 18, color: Colors.grey),
+                        const Icon(LucideIcons.megaphone, size: 16, color: Colors.grey),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -372,7 +374,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   Widget _buildEmptyState(String lang, bool isDark, bool noBuilding) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 60, horizontal: 24),
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
         borderRadius: BorderRadius.circular(28),
@@ -390,7 +392,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           ),
           const SizedBox(height: 8),
           Text(
-            lang == 'ru' ? "Здесь появится важная информация от ОСИ" : "Мұнда ОСИ-ден маңызды ақпарат пайда болады",
+            lang == 'ru' 
+                ? "Здесь появится важная информация от вашего ОСИ" 
+                : "Мұнда сіздің ОСИ-ден маңызды ақпарат пайда болады",
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.grey, fontSize: 13),
           ),

@@ -44,12 +44,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       'categoryId': 'meetings',
       'title_ru': 'Лист голосования', 
       'title_kk': 'Дауыс беру парағы',
-      'desc_ru': 'Таблица для сбора подписей (За/Против/Воздержался).', 
+      'desc_ru': 'Таблица для явочного или письменного сбора подписей.', 
       'desc_kk': 'Қол жинауға арналған кесте.',
       'is_premium': true, 
       'price': 500, 
       'ext': 'PDF',
-      'fields': ['Адрес дома', 'Вопрос для голосования']
+      // Обновленные поля для генерации таблицы нужной длины
+      'fields': ['Адрес дома', 'Дата и время', 'Вопрос для голосования', 'Кол-во строк (квартир)']
     },
     {
       'id': 'a1', 
@@ -85,237 +86,230 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     
     final String docId = doc['id'];
 
+    // Используем MultiPage для поддержки многостраничных таблиц
     pdf.addPage(
-      pw.Page(
+      pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(30),
         build: (pw.Context context) {
           
           // ==========================================
           // ШАБЛОН: АКТ ВЫПОЛНЕННЫХ РАБОТ (ФОРМА Р-1)
-          // СТРОГО ПО ШАБЛОНУ ИЗ СКРИНШОТА
           // ==========================================
           if (docId == 'a1') {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                // Шапка справа сверху
-                pw.Align(
-                  alignment: pw.Alignment.topRight,
-                  child: pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+            return [
+              // Шапка справа сверху
+              pw.Align(
+                alignment: pw.Alignment.topRight,
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text("Приложение 50", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                    pw.Text("к приказу Министра финансов", style: pw.TextStyle(font: font, fontSize: 7)),
+                    pw.Text("Республики Казахстан", style: pw.TextStyle(font: font, fontSize: 7)),
+                    pw.Text("от 20 декабря 2012 года № 562", style: pw.TextStyle(font: font, fontSize: 7)),
+                    pw.SizedBox(height: 5),
+                    pw.Text("Форма Р-1", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                  ],
+                ),
+              ),
+              
+              // Таблица ИИН/БИН справа
+              pw.Align(
+                alignment: pw.Alignment.topRight,
+                child: pw.Container(
+                  width: 120,
+                  margin: const pw.EdgeInsets.only(top: 5, bottom: 10),
+                  child: pw.Table(
+                    border: pw.TableBorder.all(width: 0.5),
                     children: [
-                      pw.Text("Приложение 50", style: pw.TextStyle(font: fontBold, fontSize: 8)),
-                      pw.Text("к приказу Министра финансов", style: pw.TextStyle(font: font, fontSize: 7)),
-                      pw.Text("Республики Казахстан", style: pw.TextStyle(font: font, fontSize: 7)),
-                      pw.Text("от 20 декабря 2012 года № 562", style: pw.TextStyle(font: font, fontSize: 7)),
-                      pw.SizedBox(height: 5),
-                      pw.Text("Форма Р-1", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                      pw.TableRow(children: [
+                        pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text("ИИН/БИН", style: pw.TextStyle(font: font, fontSize: 7)))),
+                      ]),
+                      pw.TableRow(children: [
+                        pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(userInput['БИН Заказчика'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9)))),
+                      ]),
+                      pw.TableRow(children: [
+                        pw.SizedBox(height: 4),
+                      ]),
+                      pw.TableRow(children: [
+                        pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(userInput['ИИН/БИН Исполнителя'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9)))),
+                      ]),
                     ],
                   ),
                 ),
-                
-                // Таблица ИИН/БИН справа
-                pw.Align(
-                  alignment: pw.Alignment.topRight,
-                  child: pw.Container(
-                    width: 120,
-                    margin: const pw.EdgeInsets.only(top: 5, bottom: 10),
+              ),
+
+              // Заказчик и Исполнитель
+              pw.Table(
+                columnWidths: {0: const pw.FixedColumnWidth(70), 1: const pw.FlexColumnWidth()},
+                children: [
+                  pw.TableRow(children: [
+                    pw.Padding(padding: const pw.EdgeInsets.only(top: 5), child: pw.Text("Заказчик", style: pw.TextStyle(font: font, fontSize: 8))),
+                    pw.Column(children: [
+                      pw.Center(child: pw.Text(userInput['Заказчик (ОСИ)'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                      pw.Divider(thickness: 0.5, height: 1),
+                      pw.Text("полное наименование, адрес, данные о средствах связи", style: pw.TextStyle(font: font, fontSize: 6)),
+                    ]),
+                  ]),
+                  pw.TableRow(children: [pw.SizedBox(height: 10), pw.SizedBox()]),
+                  pw.TableRow(children: [
+                    pw.Padding(padding: const pw.EdgeInsets.only(top: 5), child: pw.Text("Исполнитель", style: pw.TextStyle(font: font, fontSize: 8))),
+                    pw.Column(children: [
+                      pw.Center(child: pw.Text(userInput['Исполнитель (ИП)'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                      pw.Divider(thickness: 0.5, height: 1),
+                      pw.Text("полное наименование, адрес, данные о средствах связи", style: pw.TextStyle(font: font, fontSize: 6)),
+                    ]),
+                  ]),
+                ],
+              ),
+
+              pw.SizedBox(height: 15),
+
+              // Договор и Номер документа
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    flex: 3,
+                    child: pw.Row(children: [
+                      pw.Text("Договор (контракт)", style: pw.TextStyle(font: font, fontSize: 8)),
+                      pw.SizedBox(width: 5),
+                      pw.Expanded(child: pw.Column(children: [
+                        pw.Text(userInput['Номер договора'] ?? "________", style: pw.TextStyle(font: font, fontSize: 8)),
+                        pw.Divider(thickness: 0.5, height: 1),
+                      ])),
+                    ]),
+                  ),
+                  pw.SizedBox(width: 20),
+                  pw.Container(
+                    width: 150,
                     child: pw.Table(
                       border: pw.TableBorder.all(width: 0.5),
                       children: [
                         pw.TableRow(children: [
-                          pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text("ИИН/БИН", style: pw.TextStyle(font: font, fontSize: 7)))),
+                          pw.Center(child: pw.Text("Номер документа", style: pw.TextStyle(font: font, fontSize: 7))),
+                          pw.Center(child: pw.Text("Дата составления", style: pw.TextStyle(font: font, fontSize: 7))),
                         ]),
                         pw.TableRow(children: [
-                          pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(userInput['БИН Заказчика'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9)))),
-                        ]),
-                        pw.TableRow(children: [
-                          pw.SizedBox(height: 4),
-                        ]),
-                        pw.TableRow(children: [
-                          pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(userInput['ИИН/БИН Исполнителя'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9)))),
+                          pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text("1", style: pw.TextStyle(font: fontBold, fontSize: 8)))),
+                          pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text(userInput['Дата договора'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 8)))),
                         ]),
                       ],
                     ),
                   ),
-                ),
+                ],
+              ),
 
-                // Заказчик и Исполнитель
-                pw.Table(
-                  columnWidths: {0: const pw.FixedColumnWidth(70), 1: const pw.FlexColumnWidth()},
-                  children: [
-                    pw.TableRow(children: [
-                      pw.Padding(padding: const pw.EdgeInsets.only(top: 5), child: pw.Text("Заказчик", style: pw.TextStyle(font: font, fontSize: 8))),
-                      pw.Column(children: [
-                        pw.Center(child: pw.Text(userInput['Заказчик (ОСИ)'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9))),
-                        pw.Divider(thickness: 0.5, height: 1),
-                        pw.Text("полное наименование, адрес, данные о средствах связи", style: pw.TextStyle(font: font, fontSize: 6)),
-                      ]),
-                    ]),
-                    pw.TableRow(children: [pw.SizedBox(height: 10), pw.SizedBox()]),
-                    pw.TableRow(children: [
-                      pw.Padding(padding: const pw.EdgeInsets.only(top: 5), child: pw.Text("Исполнитель", style: pw.TextStyle(font: font, fontSize: 8))),
-                      pw.Column(children: [
-                        pw.Center(child: pw.Text(userInput['Исполнитель (ИП)'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 9))),
-                        pw.Divider(thickness: 0.5, height: 1),
-                        pw.Text("полное наименование, адрес, данные о средствах связи", style: pw.TextStyle(font: font, fontSize: 6)),
-                      ]),
-                    ]),
-                  ],
-                ),
+              pw.SizedBox(height: 20),
+              pw.Center(child: pw.Text("АКТ ВЫПОЛНЕННЫХ РАБОТ (ОКАЗАННЫХ УСЛУГ)", style: pw.TextStyle(font: fontBold, fontSize: 10))),
+              pw.SizedBox(height: 10),
 
-                pw.SizedBox(height: 15),
+              // ГЛАВНАЯ ТАБЛИЦА Р-1
+              pw.Table(
+                border: pw.TableBorder.all(width: 0.5),
+                columnWidths: {
+                  0: const pw.FixedColumnWidth(25),
+                  1: const pw.FlexColumnWidth(4),
+                  2: const pw.FixedColumnWidth(50),
+                  3: const pw.FixedColumnWidth(40),
+                  4: const pw.FixedColumnWidth(40),
+                  5: const pw.FixedColumnWidth(35),
+                  6: const pw.FixedColumnWidth(45),
+                  7: const pw.FixedColumnWidth(50),
+                },
+                children: [
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+                    children: [
+                      pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text("Номер по порядку", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center))),
+                      pw.Center(child: pw.Text("Наименование работ (услуг)", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                      pw.Center(child: pw.Text("Дата выполнения", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                      pw.Center(child: pw.Text("Сведения об отчете", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                      pw.Center(child: pw.Text("Ед. изм.", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                      pw.Center(child: pw.Text("Кол-во", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                      pw.Center(child: pw.Text("Цена за ед.", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                      pw.Center(child: pw.Text("Стоимость", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: List.generate(8, (i) => pw.Center(child: pw.Text("${i + 1}", style: pw.TextStyle(font: font, fontSize: 6)))),
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Center(child: pw.Text("1", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(userInput['Наименование работ'] ?? "", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Center(child: pw.Text(userInput['Дата договора'] ?? "", style: pw.TextStyle(font: font, fontSize: 7))),
+                      pw.Text(""),
+                      pw.Center(child: pw.Text("усл.", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Center(child: pw.Text("1", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Center(child: pw.Text(userInput['Сумма'] ?? "", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Center(child: pw.Text(userInput['Сумма'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 8))),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Text(""), pw.Text(""), pw.Text(""), pw.Text(""),
+                      pw.Align(alignment: pw.Alignment.centerRight, child: pw.Padding(padding: const pw.EdgeInsets.only(right: 4), child: pw.Text("Итого", style: pw.TextStyle(font: fontBold, fontSize: 8)))),
+                      pw.Center(child: pw.Text("1", style: pw.TextStyle(font: fontBold, fontSize: 8))),
+                      pw.Text(""),
+                      pw.Center(child: pw.Text(userInput['Сумма'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 8))),
+                    ],
+                  ),
+                ],
+              ),
 
-                // Договор и Номер документа
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      flex: 3,
-                      child: pw.Row(children: [
-                        pw.Text("Договор (контракт)", style: pw.TextStyle(font: font, fontSize: 8)),
-                        pw.SizedBox(width: 5),
-                        pw.Expanded(child: pw.Column(children: [
-                          pw.Text(userInput['Номер договора'] ?? "________", style: pw.TextStyle(font: font, fontSize: 8)),
-                          pw.Divider(thickness: 0.5, height: 1),
-                        ])),
-                      ]),
-                    ),
-                    pw.SizedBox(width: 20),
-                    pw.Container(
-                      width: 150,
-                      child: pw.Table(
-                        border: pw.TableBorder.all(width: 0.5),
-                        children: [
-                          pw.TableRow(children: [
-                            pw.Center(child: pw.Text("Номер документа", style: pw.TextStyle(font: font, fontSize: 7))),
-                            pw.Center(child: pw.Text("Дата составления", style: pw.TextStyle(font: font, fontSize: 7))),
-                          ]),
-                          pw.TableRow(children: [
-                            pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text("1", style: pw.TextStyle(font: fontBold, fontSize: 8)))),
-                            pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text(userInput['Дата договора'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 8)))),
-                          ]),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+              pw.SizedBox(height: 10),
+              pw.Text("Сведения об использовании запасов, полученных от заказчика: отсутствуют", style: pw.TextStyle(font: font, fontSize: 7)),
+              pw.Divider(thickness: 0.5),
 
-                pw.SizedBox(height: 20),
-                pw.Center(child: pw.Text("АКТ ВЫПОЛНЕННЫХ РАБОТ (ОКАЗАННЫХ УСЛУГ)", style: pw.TextStyle(font: fontBold, fontSize: 10))),
-                pw.SizedBox(height: 10),
-
-                // ГЛАВНАЯ ТАБЛИЦА Р-1 (8 КОЛОНОК)
-                pw.Table(
-                  border: pw.TableBorder.all(width: 0.5),
-                  columnWidths: {
-                    0: const pw.FixedColumnWidth(25),
-                    1: const pw.FlexColumnWidth(4),
-                    2: const pw.FixedColumnWidth(50),
-                    3: const pw.FixedColumnWidth(40),
-                    4: const pw.FixedColumnWidth(40),
-                    5: const pw.FixedColumnWidth(35),
-                    6: const pw.FixedColumnWidth(45),
-                    7: const pw.FixedColumnWidth(50),
-                  },
-                  children: [
-                    // Заголовки
-                    pw.TableRow(
-                      decoration: const pw.BoxDecoration(color: PdfColors.grey100),
+              pw.SizedBox(height: 20),
+              // Подписи сторон
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Center(child: pw.Padding(padding: const pw.EdgeInsets.all(2), child: pw.Text("Номер по порядку", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center))),
-                        pw.Center(child: pw.Text("Наименование работ (услуг)", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                        pw.Center(child: pw.Text("Дата выполнения", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                        pw.Center(child: pw.Text("Сведения об отчете", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                        pw.Center(child: pw.Text("Ед. изм.", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                        pw.Center(child: pw.Text("Кол-во", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                        pw.Center(child: pw.Text("Цена за ед.", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                        pw.Center(child: pw.Text("Стоимость", style: pw.TextStyle(font: font, fontSize: 6), textAlign: pw.TextAlign.center)),
-                      ],
+                        pw.Text("Сдал (Исполнитель)", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                        pw.SizedBox(height: 10),
+                        pw.Row(children: [
+                          pw.Column(children: [pw.SizedBox(width: 70, child: pw.Divider(thickness: 0.5)), pw.Text("должность", style: pw.TextStyle(fontSize: 5))]),
+                          pw.SizedBox(width: 5),
+                          pw.Column(children: [pw.SizedBox(width: 60, child: pw.Divider(thickness: 0.5)), pw.Text("подпись", style: pw.TextStyle(fontSize: 5))]),
+                        ]),
+                        pw.SizedBox(height: 5),
+                        pw.Text(userInput['Исполнитель (ИП)'] ?? "", style: pw.TextStyle(font: font, fontSize: 8)),
+                        pw.Text("М.П.", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                      ]
                     ),
-                    // Нумерация (1-8)
-                    pw.TableRow(
-                      children: List.generate(8, (i) => pw.Center(child: pw.Text("${i + 1}", style: pw.TextStyle(font: font, fontSize: 6)))),
-                    ),
-                    // Строка с данными
-                    pw.TableRow(
+                  ),
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
-                        pw.Center(child: pw.Text("1", style: pw.TextStyle(font: font, fontSize: 8))),
-                        pw.Padding(padding: const pw.EdgeInsets.all(4), child: pw.Text(userInput['Наименование работ'] ?? "", style: pw.TextStyle(font: font, fontSize: 8))),
-                        pw.Center(child: pw.Text(userInput['Дата договора'] ?? "", style: pw.TextStyle(font: font, fontSize: 7))),
-                        pw.Text(""),
-                        pw.Center(child: pw.Text("усл.", style: pw.TextStyle(font: font, fontSize: 8))),
-                        pw.Center(child: pw.Text("1", style: pw.TextStyle(font: font, fontSize: 8))),
-                        pw.Center(child: pw.Text(userInput['Сумма'] ?? "", style: pw.TextStyle(font: font, fontSize: 8))),
-                        pw.Center(child: pw.Text(userInput['Сумма'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 8))),
-                      ],
+                        pw.Text("Принял (Заказчик)", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                        pw.SizedBox(height: 10),
+                        pw.Row(children: [
+                          pw.Column(children: [pw.SizedBox(width: 70, child: pw.Divider(thickness: 0.5)), pw.Text("должность", style: pw.TextStyle(fontSize: 5))]),
+                          pw.SizedBox(width: 5),
+                          pw.Column(children: [pw.SizedBox(width: 60, child: pw.Divider(thickness: 0.5)), pw.Text("подпись", style: pw.TextStyle(fontSize: 5))]),
+                        ]),
+                        pw.SizedBox(height: 5),
+                        pw.Text("Дата принятия работ: ________________", style: pw.TextStyle(font: font, fontSize: 7)),
+                        pw.Text("М.П.", style: pw.TextStyle(font: fontBold, fontSize: 8)),
+                      ]
                     ),
-                    // Итого
-                    pw.TableRow(
-                      children: [
-                        pw.Text(""), pw.Text(""), pw.Text(""), pw.Text(""),
-                        pw.Align(alignment: pw.Alignment.centerRight, child: pw.Padding(padding: const pw.EdgeInsets.only(right: 4), child: pw.Text("Итого", style: pw.TextStyle(font: fontBold, fontSize: 8)))),
-                        pw.Center(child: pw.Text("1", style: pw.TextStyle(font: fontBold, fontSize: 8))),
-                        pw.Text(""),
-                        pw.Center(child: pw.Text(userInput['Сумма'] ?? "", style: pw.TextStyle(font: fontBold, fontSize: 8))),
-                      ],
-                    ),
-                  ],
-                ),
-
-                pw.SizedBox(height: 10),
-                pw.Text("Сведения об использовании запасов, полученных от заказчика: отсутствуют", style: pw.TextStyle(font: font, fontSize: 7)),
-                pw.Divider(thickness: 0.5),
-
-                pw.SizedBox(height: 20),
-                // Подписи сторон
-                pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text("Сдал (Исполнитель)", style: pw.TextStyle(font: fontBold, fontSize: 8)),
-                          pw.SizedBox(height: 10),
-                          pw.Row(children: [
-                            pw.Column(children: [pw.SizedBox(width: 70, child: pw.Divider(thickness: 0.5)), pw.Text("должность", style: pw.TextStyle(fontSize: 5))]),
-                            pw.SizedBox(width: 5),
-                            pw.Column(children: [pw.SizedBox(width: 60, child: pw.Divider(thickness: 0.5)), pw.Text("подпись", style: pw.TextStyle(fontSize: 5))]),
-                          ]),
-                          pw.SizedBox(height: 5),
-                          pw.Text(userInput['Исполнитель (ИП)'] ?? "", style: pw.TextStyle(font: font, fontSize: 8)),
-                          pw.Text("М.П.", style: pw.TextStyle(font: fontBold, fontSize: 8)),
-                        ]
-                      ),
-                    ),
-                    pw.Expanded(
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
-                        children: [
-                          pw.Text("Принял (Заказчик)", style: pw.TextStyle(font: fontBold, fontSize: 8)),
-                          pw.SizedBox(height: 10),
-                          pw.Row(children: [
-                            pw.Column(children: [pw.SizedBox(width: 70, child: pw.Divider(thickness: 0.5)), pw.Text("должность", style: pw.TextStyle(fontSize: 5))]),
-                            pw.SizedBox(width: 5),
-                            pw.Column(children: [pw.SizedBox(width: 60, child: pw.Divider(thickness: 0.5)), pw.Text("подпись", style: pw.TextStyle(fontSize: 5))]),
-                          ]),
-                          pw.SizedBox(height: 5),
-                          pw.Text("Дата принятия работ: ________________", style: pw.TextStyle(font: font, fontSize: 7)),
-                          pw.Text("М.П.", style: pw.TextStyle(font: fontBold, fontSize: 8)),
-                        ]
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            );
+                  ),
+                ],
+              ),
+            ];
           } 
           
           // ==========================================
-          // ШАБЛОН: ПРОТОКОЛ СОБРАНИЯ (БЕЗ ИЗМЕНЕНИЙ)
+          // ШАБЛОН: ПРОТОКОЛ СОБРАНИЯ
           // ==========================================
           else if (docId == 'p1') {
             String rawAgenda = userInput['Вопросы (через запятую)'] ?? '';
@@ -338,72 +332,96 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               );
             }
 
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Center(child: pw.Text("Протокол № ${userInput['Номер протокола']}", style: pw.TextStyle(font: fontBold, fontSize: 12))),
-                pw.Center(child: pw.Text("Собрания собственников имущества (письменный опрос)", style: pw.TextStyle(font: fontBold, fontSize: 10))),
-                pw.SizedBox(height: 15),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("Время: ${userInput['Время']}", style: pw.TextStyle(font: font, fontSize: 10)),
-                  pw.Text("Дата: ${userInput['Дата']}", style: pw.TextStyle(font: font, fontSize: 10)),
-                ]),
-                pw.SizedBox(height: 10),
-                pw.Text("Адрес: ${userInput['Адрес дома']}", style: pw.TextStyle(font: font, fontSize: 10)),
-                pw.Text("Всего квартир: ${userInput['Кол-во квартир']}", style: pw.TextStyle(font: font, fontSize: 10)),
-                pw.Text("Участвовало: ${userInput['Кол-во участников']}", style: pw.TextStyle(font: font, fontSize: 10)),
-                pw.SizedBox(height: 15),
-                pw.Text("Повестка дня:", style: pw.TextStyle(font: fontBold, fontSize: 10)),
-                ...agendaItems.asMap().entries.map((e) => pw.Text("${e.key + 1}. ${e.value}", style: pw.TextStyle(font: font, fontSize: 10))),
-                pw.Spacer(),
-                buildSignatureRow("Председатель:"),
-                buildSignatureRow("Секретарь:"),
-                buildSignatureRow("Совет дома:"),
-              ],
-            );
+            return [
+              pw.Center(child: pw.Text("Протокол № ${userInput['Номер протокола']}", style: pw.TextStyle(font: fontBold, fontSize: 12))),
+              pw.Center(child: pw.Text("Собрания собственников имущества (письменный опрос)", style: pw.TextStyle(font: fontBold, fontSize: 10))),
+              pw.SizedBox(height: 15),
+              pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                pw.Text("Время: ${userInput['Время']}", style: pw.TextStyle(font: font, fontSize: 10)),
+                pw.Text("Дата: ${userInput['Дата']}", style: pw.TextStyle(font: font, fontSize: 10)),
+              ]),
+              pw.SizedBox(height: 10),
+              pw.Text("Адрес: ${userInput['Адрес дома']}", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.Text("Всего квартир: ${userInput['Кол-во квартир']}", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.Text("Участвовало: ${userInput['Кол-во участников']}", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.SizedBox(height: 15),
+              pw.Text("Повестка дня:", style: pw.TextStyle(font: fontBold, fontSize: 10)),
+              ...agendaItems.asMap().entries.map((e) => pw.Text("${e.key + 1}. ${e.value}", style: pw.TextStyle(font: font, fontSize: 10))),
+              pw.SizedBox(height: 40),
+              buildSignatureRow("Председатель:"),
+              buildSignatureRow("Секретарь:"),
+              buildSignatureRow("Совет дома:"),
+            ];
           }
 
           // ==========================================
-          // ШАБЛОН: ЛИСТ ГОЛОСОВАНИЯ (БЕЗ ИЗМЕНЕНИЙ)
+          // ШАБЛОН: ЛИСТ ГОЛОСОВАНИЯ (ПОЛНОСТЬЮ ОБНОВЛЕН)
           // ==========================================
           else if (docId == 'l1') {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Center(child: pw.Text("ЛИСТ ГОЛОСОВАНИЯ", style: pw.TextStyle(font: fontBold, fontSize: 14))),
-                pw.SizedBox(height: 15),
-                pw.Text("Адрес: ${userInput['Адрес дома']}", style: pw.TextStyle(font: fontBold)),
-                pw.Text("Вопрос: ${userInput['Вопрос для голосования']}", style: pw.TextStyle(font: font, fontSize: 10)),
-                pw.SizedBox(height: 15),
-                pw.TableHelper.fromTextArray(
-                  border: pw.TableBorder.all(width: 0.5),
-                  headerStyle: pw.TextStyle(font: fontBold, fontSize: 9),
-                  cellStyle: pw.TextStyle(font: font, fontSize: 9),
-                  headers: ['№', 'ФИО собственника', '№ кв.', 'ЗА', 'ПРОТИВ', 'ВОЗД.'],
-                  data: List.generate(15, (i) => ['${i + 1}', '', '', '', '', '']),
-                ),
-              ],
-            );
+            // Парсим кол-во строк для таблицы, по умолчанию 15
+            int rowCount = int.tryParse(userInput['Кол-во строк (квартир)'] ?? '15') ?? 15;
+
+            return [
+              // Официальная шапка
+              pw.Center(
+                child: pw.Text(
+                  "Лист голосования собственников квартир, нежилых помещений,\nпроголосовавших на собрании (проводимый путем явочного порядка)", 
+                  textAlign: pw.TextAlign.center, 
+                  style: pw.TextStyle(font: fontBold, fontSize: 12)
+                )
+              ),
+              pw.SizedBox(height: 15),
+              pw.Text("Дата и время: ${userInput['Дата и время'] ?? ''}", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.Text("Местонахождение многоквартирного жилого дома: ${userInput['Адрес дома'] ?? ''}", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.SizedBox(height: 10),
+              pw.Text("Вопрос внесенный для обсуждения:", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.Text("${userInput['Вопрос для голосования'] ?? ''}", style: pw.TextStyle(font: fontBold, fontSize: 11)),
+              pw.SizedBox(height: 15),
+              
+              // Главная таблица с динамическим количеством строк
+              pw.TableHelper.fromTextArray(
+                border: pw.TableBorder.all(width: 0.5),
+                headerStyle: pw.TextStyle(font: fontBold, fontSize: 9),
+                cellStyle: pw.TextStyle(font: font, fontSize: 9),
+                headers: ['№', 'Фамилия Имя Отчество\n(при его наличии)', '№ кв.', 'За\n(подпись)', 'Против\n(подпись)', 'Воздержусь\n(подпись)'],
+                data: List.generate(rowCount, (i) => ['${i + 1}', '', '', '', '', '']),
+                columnWidths: {
+                  0: const pw.FixedColumnWidth(25),
+                  1: const pw.FlexColumnWidth(3),
+                  2: const pw.FixedColumnWidth(40),
+                  3: const pw.FlexColumnWidth(1),
+                  4: const pw.FlexColumnWidth(1),
+                  5: const pw.FlexColumnWidth(1),
+                }
+              ),
+              
+              pw.SizedBox(height: 30),
+              // Официальные места для подписей внизу документа
+              pw.Text("Председатель собрания: _______________________        _________", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.SizedBox(height: 5),
+              pw.Text("Секретарь собрания: ________________________          _________", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.SizedBox(height: 5),
+              pw.Text("Член совета дома: ________________________             _________", style: pw.TextStyle(font: font, fontSize: 10)),
+              pw.SizedBox(height: 5),
+              pw.Text("Член совета дома: ______________________________       _________", style: pw.TextStyle(font: font, fontSize: 10)),
+            ];
           }
 
           // ==========================================
-          // ШАБЛОН: УВЕДОМЛЕНИЕ (БЕЗ ИЗМЕНЕНИЙ)
+          // ШАБЛОН: УВЕДОМЛЕНИЕ
           // ==========================================
           else {
-            return pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Align(alignment: pw.Alignment.topRight, child: pw.Text("Квартира № ${userInput['Номер квартиры']}\n${userInput['ФИО Должника']}", style: pw.TextStyle(font: fontBold, fontSize: 11))),
-                pw.SizedBox(height: 30),
-                pw.Center(child: pw.Text("УВЕДОМЛЕНИЕ О ЗАДОЛЖЕННОСТИ", style: pw.TextStyle(font: fontBold, fontSize: 14))),
-                pw.SizedBox(height: 20),
-                pw.Text("Уважаемый(ая) ${userInput['ФИО Должника']}!", style: pw.TextStyle(font: font, fontSize: 12)),
-                pw.SizedBox(height: 10),
-                pw.Text("Сообщаем Вам, что по вашей квартире числится долг в размере ${userInput['Сумма долга']} тенге. Просим погасить его до ${userInput['Срок оплаты']}.", style: pw.TextStyle(font: font, fontSize: 12)),
-                pw.SizedBox(height: 40),
-                pw.Text("Председатель ОСИ ____________________", style: pw.TextStyle(font: fontBold, fontSize: 12)),
-              ],
-            );
+            return [
+              pw.Align(alignment: pw.Alignment.topRight, child: pw.Text("Квартира № ${userInput['Номер квартиры']}\n${userInput['ФИО Должника']}", style: pw.TextStyle(font: fontBold, fontSize: 11))),
+              pw.SizedBox(height: 30),
+              pw.Center(child: pw.Text("УВЕДОМЛЕНИЕ О ЗАДОЛЖЕННОСТИ", style: pw.TextStyle(font: fontBold, fontSize: 14))),
+              pw.SizedBox(height: 20),
+              pw.Text("Уважаемый(ая) ${userInput['ФИО Должника']}!", style: pw.TextStyle(font: font, fontSize: 12)),
+              pw.SizedBox(height: 10),
+              pw.Text("Сообщаем Вам, что по вашей квартире числится долг в размере ${userInput['Сумма долга']} тенге. Просим погасить его до ${userInput['Срок оплаты']}.", style: pw.TextStyle(font: font, fontSize: 12)),
+              pw.SizedBox(height: 40),
+              pw.Text("Председатель ОСИ ____________________", style: pw.TextStyle(font: fontBold, fontSize: 12)),
+            ];
           }
         },
       ),
@@ -528,6 +546,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: TextField(
                       controller: controllers[f],
+                      // Подсказка, если поле требует числа
+                      keyboardType: f.contains('Кол-во') || f.contains('Сумма') ? TextInputType.number : TextInputType.text,
                       decoration: InputDecoration(
                         labelText: f,
                         filled: true,

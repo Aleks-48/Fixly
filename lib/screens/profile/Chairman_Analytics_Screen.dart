@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:fixly_app/main.dart'; 
+import 'package:fixly_app/main.dart'; // Предполагается, что здесь лежит appLanguage
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/services/pdf_report_service.dart';
 import 'package:fixly_app/services/ai_service.dart'; 
 import 'package:printing/printing.dart'; 
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 class ChairmanAnalyticsScreen extends StatefulWidget {
   const ChairmanAnalyticsScreen({super.key});
@@ -14,7 +16,7 @@ class ChairmanAnalyticsScreen extends StatefulWidget {
 }
 
 class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
-  // --- 1. ФИНАНСОВЫЕ ПОКАЗАТЕЛИ (РЕАЛЬНОСТЬ РК 2025) ---
+  // --- 1. ФИНАНСОВЫЕ ПОКАЗАТЕЛИ ---
   double _eosiBalance = 2450000;      // Текущий счет (ЕОСИ)
   double _capitalBalance = 5800000;   // Кап. ремонт
   
@@ -27,13 +29,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   String _aiForecastText = ""; 
   List<Map<String, dynamic>> _aiPriorityTasks = []; 
   
-  // --- 2. ДАННЫЕ РЫНКА (ФАКТОР НДС 16%) ---
-  // Фиксированные данные по Казахстану для стабильного анализа
+  // --- 2. ДАННЫЕ РЫНКА (ФАКТОР НДС 16% И РК 2025) ---
   final Map<String, Map<String, dynamic>> _marketStats = {
     'utilities': {
       'trend': 0.18, 
       'label': 'Тарифы ЖКХ (РК)', 
-      'info': 'Рост из-за программы "Тариф в обмен на инвестиции"',
+      'info': 'Программа "Тариф в обмен на инвестиции"',
       'color': Colors.redAccent
     },
     'materials': {
@@ -56,8 +57,17 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     _fetchAiAnalysis();
   }
 
-  // --- 3. ЛОГИКА ИИ АНАЛИЗА (ГЛУБОКИЙ АУДИТ) ---
+  @override
+  void dispose() {
+    _balanceController.dispose();
+    _capitalController.dispose();
+    _manualStatController.dispose();
+    super.dispose();
+  }
+
+  // --- 3. ЛОГИКА ИИ АНАЛИЗА ---
   Future<void> _fetchAiAnalysis() async {
+    if (!mounted) return;
     setState(() {
       _isAiLoading = true;
     });
@@ -65,7 +75,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     try {
       final supabase = Supabase.instance.client;
       
-      // Получаем историю последних трат для контекста
+      // Получаем историю последних выполненных задач
       final List<Map<String, dynamic>> lastTasks = await supabase
           .from('tasks')
           .select()
@@ -73,14 +83,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           .order('created_at', ascending: false)
           .limit(15);
 
-      // Формируем жесткий рыночный контекст для Gemini
       String marketContext = """
       ВНИМАНИЕ: Экономика Казахстана 2025. 
       - Налоговая реформа: Ожидаемое повышение НДС до 16%.
-      - Стройматериалы в РК: Рост цен на 16-20% из-за импортозамещения и логистики.
+      - Стройматериалы в РК: Рост цен на 16-20%.
       - Коммунальные услуги: Плановое повышение тарифов на 15-25%.
-      - Цель анализа: Помочь председателю ОСИ обосновать жильцам необходимость увеличения сборов или срочных закупок материалов до подорожания.
-      Дополнительно от пользователя: ${_manualStatController.text}
+      - Дополнительно: ${_manualStatController.text}
       """;
 
       final result = await AIService.getChairmanFinancialAnalysis(
@@ -91,21 +99,24 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         marketContext: marketContext, 
       );
 
-      setState(() {
-        _aiForecastText = result;
-        _updateAiPriorityTasks(lastTasks);
-      });
+      if (mounted) {
+        setState(() {
+          _aiForecastText = result;
+          _updateAiPriorityTasks();
+        });
+      }
     } catch (e) {
       debugPrint("AI Error: $e");
     } finally {
-      setState(() {
-        _isAiLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isAiLoading = false;
+        });
+      }
     }
   }
 
-  void _updateAiPriorityTasks(List<Map<String, dynamic>> tasks) {
-    // Формируем список критических действий на основе анализа рынка
+  void _updateAiPriorityTasks() {
     setState(() {
       _aiPriorityTasks = [
         {
@@ -124,7 +135,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     });
   }
 
-  // --- 4. ДИАЛОГИ ВВОДА ДАННЫХ ---
+  // --- 4. ДИАЛОГИ ---
 
   void _showManualStatDialog(String lang) {
     showDialog(
@@ -137,8 +148,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           children: [
             Text(
               lang == 'ru' 
-                ? "Введите изменения (например: рост цен на лифтовое оборудование +20%)" 
-                : "Өзгерістерді енгізіңіз (мыс: лифт жабдықтары +20%)",
+                ? "Введите изменения (например: рост цен на лифты +20%)" 
+                : "Өзгерістерді енгізіңіз (мыс: лифт бағасы +20%)",
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 12),
@@ -162,7 +173,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               _fetchAiAnalysis(); 
             }, 
             style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text(lang == 'ru' ? "Обновить анализ" : "Талдауды жаңарту")
+            child: Text(lang == 'ru' ? "Обновить" : "Жаңарту")
           ),
         ],
       ),
@@ -217,7 +228,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  // --- 5. ГЕНЕРАЦИЯ PDF-ОТЧЕТА ---
+  // --- 5. ГЕНЕРАЦИЯ PDF ---
   Future<void> _handlePdfGeneration(String lang) async {
     setState(() => _isGeneratingPdf = true);
     try {
@@ -226,25 +237,83 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       
       List<Map<String, dynamic>> preparedVotes = [];
       for (var v in votes) {
-        final bytes = await PdfReportService.downloadSignature(v['signature_url']);
+        dynamic bytes;
+        if (v['signature_url'] != null) {
+          try {
+            bytes = await PdfReportService.downloadSignature(v['signature_url']);
+          } catch (e) {
+            debugPrint("Sig error: $e");
+          }
+        }
         var vCopy = Map<String, dynamic>.from(v);
         vCopy['sig_bytes'] = bytes;
         preparedVotes.add(vCopy);
       }
 
-      final pdfData = await PdfReportService.createPdfDocument(
-        proposalTitle: lang == 'ru' ? "Аналитический отчет ОСИ (РК 2025)" : "ОСИ талдау есебі",
-        votes: preparedVotes,
+      final pdf = pw.Document();
+      final font = await PdfGoogleFonts.robotoRegular();
+      final fontBold = await PdfGoogleFonts.robotoMedium();
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(30),
+          build: (pw.Context context) => [
+            pw.Center(
+              child: pw.Text(
+                "ЛИСТ ГОЛОСОВАНИЯ СОБСТВЕННИКОВ\n(Письменный опрос)", 
+                textAlign: pw.TextAlign.center, 
+                style: pw.TextStyle(font: fontBold, fontSize: 14)
+              )
+            ),
+            pw.SizedBox(height: 20),
+            pw.Text("Вопрос: Утверждение плана работ на основании AI-аналитики 2025", style: pw.TextStyle(font: fontBold, fontSize: 10)),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: pw.TableBorder.all(width: 0.5),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("№", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ФИО", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Кв.", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ЗА", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ПРОТИВ", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                  ]
+                ),
+                ...List.generate(preparedVotes.isEmpty ? 10 : preparedVotes.length, (index) {
+                  if (preparedVotes.isEmpty) {
+                    return pw.TableRow(children: List.generate(5, (_) => pw.Padding(padding: const pw.EdgeInsets.all(10), child: pw.Text(""))));
+                  }
+                  final v = preparedVotes[index];
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${index + 1}", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${v['full_name'] ?? ''}", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${v['apartment'] ?? ''}", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: v['decision'] == 'yes' && v['sig_bytes'] != null ? pw.Container(height: 15, child: pw.Image(pw.MemoryImage(v['sig_bytes']))) : pw.Text("")),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: v['decision'] == 'no' && v['sig_bytes'] != null ? pw.Container(height: 15, child: pw.Image(pw.MemoryImage(v['sig_bytes']))) : pw.Text("")),
+                    ]
+                  );
+                }),
+              ]
+            ),
+          ]
+        )
       );
 
-      await Printing.sharePdf(bytes: pdfData, filename: 'osi_finance_report.pdf');
+      final bytes = await pdf.save();
+      await Printing.sharePdf(bytes: bytes, filename: 'voting_list.pdf');
+
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
-      setState(() => _isGeneratingPdf = false);
+      if (mounted) setState(() => _isGeneratingPdf = false);
     }
   }
 
+  // --- 6. ОСНОВНОЙ BUILD ---
   @override
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
@@ -255,17 +324,10 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       builder: (context, lang, child) {
         return Scaffold(
           appBar: AppBar(
-            elevation: 0,
             title: Text(lang == 'ru' ? "Аналитика: Рынок РК" : "Аналитика: РК нарығы"),
             actions: [
-              IconButton(
-                icon: const Icon(LucideIcons.barChart4, size: 20),
-                onPressed: () => _showManualStatDialog(lang),
-              ),
-              IconButton(
-                icon: const Icon(LucideIcons.sparkles, color: Colors.blueAccent),
-                onPressed: _fetchAiAnalysis,
-              )
+              IconButton(icon: const Icon(LucideIcons.barChart4), onPressed: () => _showManualStatDialog(lang)),
+              IconButton(icon: const Icon(LucideIcons.sparkles, color: Colors.blueAccent), onPressed: _fetchAiAnalysis)
             ],
           ),
           body: Stack(
@@ -273,78 +335,51 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               StreamBuilder<List<Map<String, dynamic>>>(
                 stream: supabase.from('tasks').stream(primaryKey: ['id']),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                  final tasks = snapshot.data ?? [];
-                  double totalSpent = 0;
-                  int completedCount = 0;
-                  int activeCount = 0;
+                  final tasks = snapshot.data!;
+                  double spent = 0;
+                  int completed = 0;
+                  int active = 0;
 
-                  for (var task in tasks) {
-                    if (task['status'] == 'completed') {
-                      completedCount++;
-                      totalSpent += double.tryParse(task['final_price']?.toString() ?? '0') ?? 0;
+                  for (var t in tasks) {
+                    if (t['status'] == 'completed') {
+                      completed++;
+                      spent += double.tryParse(t['final_price']?.toString() ?? '0') ?? 0;
                     } else {
-                      activeCount++;
+                      active++;
                     }
                   }
 
-                  double health = (completedCount + activeCount) > 0 
-                      ? completedCount / (completedCount + activeCount) : 1.0;
+                  double health = (completed + active) > 0 ? completed / (completed + active) : 1.0;
 
                   return SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ФИНАНСЫ
-                        _buildFinancialOverview(_eosiBalance, _capitalBalance, totalSpent, lang),
-                        
+                        _buildFinancialOverview(_eosiBalance, _capitalBalance, spent, lang),
                         const SizedBox(height: 25),
-                        
-                        // AI АНАЛИТИКА НДС 16%
-                        _buildSectionHeader(lang == 'ru' ? "AI Прогноз: Налоги и Инфляция" : "AI болжамы: Салықтар"),
+                        _buildSectionHeader(lang == 'ru' ? "AI Прогноз" : "AI болжамы"),
                         _buildAIAdviceCard(_aiForecastText, _isAiLoading, lang, isDark),
-
                         const SizedBox(height: 25),
-
-                        // ПРИОРИТЕТНЫЕ ЗАДАЧИ
                         _buildSectionHeader(lang == 'ru' ? "Критические задачи" : "Маңызды міндеттер"),
-                        _buildAiTasksList(_aiPriorityTasks, lang),
-
+                        _buildAiTasksList(_aiPriorityTasks),
                         const SizedBox(height: 25),
-
-                        // ДИНАМИКА ЦЕН (ИСПРАВЛЕННЫЙ ЦВЕТ)
-                        _buildSectionHeader(lang == 'ru' ? "Цены в РК (с учетом НДС 16%)" : "РК бағалары (ҚҚС 16%)"),
-                        _buildMarketComparison(lang, isDark),
-
+                        _buildSectionHeader(lang == 'ru' ? "Цены в РК (НДС 16%)" : "РК бағалары (ҚҚС 16%)"),
+                        _buildMarketComparison(isDark),
                         const SizedBox(height: 25),
-
-                        // ЗДОРОВЬЕ
-                        _buildSectionHeader(lang == 'ru' ? "Технический статус" : "Техникалық күй"),
-                        _buildHealthIndicator(health, activeCount, lang),
-                        
-                        const SizedBox(height: 25),
-
-                        // ПОСЛЕДНИЕ ТРАТЫ
-                        _buildRecentTasksList(tasks, lang),
-
+                        _buildSectionHeader(lang == 'ru' ? "Статус дома" : "Үйдің күйі"),
+                        _buildHealthIndicator(health, active, lang),
                         const SizedBox(height: 30),
-
-                        // КНОПКА
                         _buildReportButton(lang),
-                        
-                        const SizedBox(height: 60),
+                        const SizedBox(height: 50),
                       ],
                     ),
                   );
                 },
               ),
-              
-              if (_isGeneratingPdf)
-                _buildOverlayLoader(lang == 'ru' ? "Формирование отчета..." : "Есеп жасалуда..."),
+              if (_isGeneratingPdf) _buildOverlayLoader(lang == 'ru' ? "Создание PDF..." : "PDF жасалуда..."),
             ],
           ),
         );
@@ -352,19 +387,14 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  // --- 6. ВИДЖЕТЫ (UI COMPONENTS) ---
+  // --- 7. КОМПОНЕНТЫ ИНТЕРФЕЙСА ---
 
   Widget _buildFinancialOverview(double bal, double cap, double spent, String lang) {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: const LinearGradient(colors: [Color(0xFF0F172A), Color(0xFF1E293B)]),
         borderRadius: BorderRadius.circular(28),
-        boxShadow: [BoxShadow(color: Colors.blue.withOpacity(0.2), blurRadius: 30, offset: const Offset(0, 10))],
       ),
       child: Column(
         children: [
@@ -378,15 +408,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Divider(color: Colors.white10, thickness: 1),
-          ),
+          const Divider(color: Colors.white10, height: 40),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(lang == 'ru' ? "ОСВОЕНО (МЕСЯЦ)" : "ИГЕРІЛДІ (АЙ)", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)),
-              Text("${spent.toInt()} ₸", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 24)),
+              Text(lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+              Text("${spent.toInt()} ₸", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
             ],
           )
         ],
@@ -398,8 +425,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 6),
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.bold)),
         Text("${val.toInt()} ₸", style: TextStyle(color: col, fontSize: 18, fontWeight: FontWeight.bold)),
       ],
     );
@@ -410,7 +436,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(isDark ? 0.12 : 0.05),
+        color: Colors.blue.withOpacity(isDark ? 0.1 : 0.05),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.blue.withOpacity(0.2)),
       ),
@@ -419,191 +445,105 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         children: [
           Row(
             children: [
-              const Icon(LucideIcons.sparkles, color: Colors.blueAccent, size: 18),
-              const SizedBox(width: 10),
-              Text(lang == 'ru' ? "AI-АНАЛИТИКА РК" : "AI-ТАЛДАУ", 
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.blueAccent)),
+              const Icon(LucideIcons.sparkles, color: Colors.blueAccent, size: 16),
+              const SizedBox(width: 8),
+              Text("AI ANALYTICS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueAccent.withOpacity(0.7))),
             ],
           ),
-          const SizedBox(height: 12),
-          if (loading) const LinearProgressIndicator(minHeight: 2, backgroundColor: Colors.transparent),
+          const SizedBox(height: 10),
+          if (loading) const LinearProgressIndicator(minHeight: 2),
           if (!loading) Text(
-            text.isEmpty ? (lang == 'ru' ? "Запустите ИИ для анализа рисков НДС 16%" : "16% ҚҚС тәуекелдерін талдау үшін ИИ іске қосыңыз") : text,
-            style: TextStyle(fontSize: 13, height: 1.6, color: isDark ? Colors.white70 : Colors.black87),
+            text.isEmpty ? (lang == 'ru' ? "Нажмите иконку искр для анализа" : "Талдау үшін ұшқын белгішесін басыңыз") : text,
+            style: TextStyle(fontSize: 13, height: 1.5, color: isDark ? Colors.white70 : Colors.black87),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildAiTasksList(List<Map<String, dynamic>> tasks, String lang) {
-    if (tasks.isEmpty) return const SizedBox();
+  Widget _buildAiTasksList(List<Map<String, dynamic>> tasks) {
     return Column(
       children: tasks.map((t) => Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.blue.withOpacity(0.1)),
-        ),
+        margin: const EdgeInsets.only(bottom: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ListTile(
-          leading: CircleAvatar(
-            backgroundColor: (t['importance'] == 'Critical' ? Colors.red : Colors.blue).withOpacity(0.1),
-            child: Icon(t['icon'] as IconData, size: 18, color: t['importance'] == 'Critical' ? Colors.red : Colors.blue),
-          ),
-          title: Text(t['title'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-          subtitle: Text(t['importance'], style: TextStyle(fontSize: 11, color: t['importance'] == 'Critical' ? Colors.red : Colors.orange, fontWeight: FontWeight.bold)),
-          trailing: Text(t['cost'], style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.blueAccent)),
+          leading: Icon(t['icon'] as IconData, color: t['importance'] == 'Critical' ? Colors.red : Colors.orange),
+          title: Text(t['title'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          trailing: Text(t['cost'], style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
         ),
       )).toList(),
     );
   }
 
-  Widget _buildMarketComparison(String lang, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.03) : Colors.grey[50],
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.withOpacity(0.1)),
-      ),
-      child: Column(
-        children: _marketStats.entries.map((e) {
-          final trend = e.value['trend'] as double;
-          final color = e.value['color'] as Color; // Исправленная типизация
-          final label = e.value['label'] as String;
-          final info = e.value['info'] as String;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: _buildMarketBar(
-              label, 
-              (1.0 + trend), 
-              color,
-              "+${(trend * 100).toInt()}%",
-              info
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildMarketBar(String label, double val, Color col, String diff, String info) {
+  Widget _buildMarketComparison(bool isDark) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-            Text(diff, style: TextStyle(color: col, fontSize: 13, fontWeight: FontWeight.w900)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(info, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-        const SizedBox(height: 10),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: LinearProgressIndicator(
-            value: val / 1.5, 
-            color: col, 
-            backgroundColor: col.withOpacity(0.1), 
-            minHeight: 8,
+      children: _marketStats.entries.map((e) {
+        final trend = e.value['trend'] as double;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(e.value['label'], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text("+${(trend * 100).toInt()}%", style: TextStyle(color: e.value['color'], fontWeight: FontWeight.bold, fontSize: 12)),
+                ],
+              ),
+              const SizedBox(height: 6),
+              LinearProgressIndicator(value: trend * 2, color: e.value['color'], backgroundColor: e.value['color'].withOpacity(0.1), minHeight: 6),
+            ],
           ),
-        ),
-      ],
+        );
+      }).toList(),
     );
   }
 
   Widget _buildHealthIndicator(double health, int active, String lang) {
-    Color col = health > 0.8 ? Colors.green : (health > 0.5 ? Colors.orange : Colors.red);
+    Color col = health > 0.7 ? Colors.green : Colors.orange;
     return Container(
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: col.withOpacity(0.2)),
-        color: col.withOpacity(0.02),
-      ),
-      child: Column(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), border: Border.all(color: col.withOpacity(0.2))),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("${(health * 100).toInt()}%", style: TextStyle(color: col, fontSize: 38, fontWeight: FontWeight.w900)),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(lang == 'ru' ? "АКТИВНЫЕ ЗАЯВКИ" : "БЕЛСЕНДІ ӨТІНІШТЕР", style: const TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.w900)),
-                  Text("$active", style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-                ],
-              )
-            ],
-          ),
-          const SizedBox(height: 15),
-          LinearProgressIndicator(value: health, color: col, backgroundColor: col.withOpacity(0.1), minHeight: 10),
+          Text("${(health * 100).toInt()}%", style: TextStyle(color: col, fontSize: 32, fontWeight: FontWeight.w900)),
+          Text(lang == 'ru' ? "Активно: $active" : "Белсенді: $active", style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
   }
 
-  Widget _buildRecentTasksList(List<Map<String, dynamic>> tasks, String lang) {
-    final last = tasks.where((t) => t['status'] == 'completed').toList().reversed.take(3).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader(lang == 'ru' ? "Последние оплаты" : "Соңғы төлемдер"),
-        if (last.isEmpty) const Text("...", style: TextStyle(color: Colors.grey)),
-        ...last.map((t) => ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(LucideIcons.receipt, color: Colors.green, size: 22),
-          title: Text(t['category'] ?? "Услуга", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-          trailing: Text("${t['final_price']} ₸", style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-        )),
-      ],
-    );
-  }
-
   Widget _buildReportButton(String lang) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      height: 64,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [BoxShadow(color: Colors.blueAccent.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
-      ),
+      height: 56,
       child: ElevatedButton.icon(
         onPressed: _isGeneratingPdf ? null : () => _handlePdfGeneration(lang),
         icon: const Icon(LucideIcons.fileDown, color: Colors.white),
-        label: Text(lang == 'ru' ? "СКАЧАТЬ АНАЛИТИКУ PDF" : "PDF ТАЛДАУДЫ ЖҮКТЕУ", 
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.blueAccent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          elevation: 0,
-        ),
+        label: Text(lang == 'ru' ? "СКАЧАТЬ ЛИСТ ГОЛОСОВАНИЯ" : "ЖҮКТЕУ"),
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
       ),
     );
   }
 
   Widget _buildSectionHeader(String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 16, left: 4),
-    child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1.5)),
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1)),
   );
 
-  Widget _buildOverlayLoader(String text) {
-    return Container(
-      color: Colors.black87,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: Colors.blueAccent, strokeWidth: 6),
-            const SizedBox(height: 30),
-            Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
-          ],
-        ),
+  Widget _buildOverlayLoader(String text) => Container(
+    color: Colors.black87,
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: Colors.blueAccent),
+          const SizedBox(height: 20),
+          Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

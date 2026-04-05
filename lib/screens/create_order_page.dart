@@ -2,13 +2,13 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fixly_app/main.dart';
+import 'package:fixly_app/main.dart'; // Путь к вашему main.dart для доступа к appLanguage
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/services/ai_service.dart';
 
-/// Страница создания новой заявки (задачи)
-/// Поддерживает интеграцию с ИИ для генерации плана работ и загрузку фото
+/// Страница создания новой заявки
+/// Особенности: Поддержка темной темы, Интеграция с ИИ, Загрузка фото в Supabase Storage
 class CreateOrderPage extends StatefulWidget {
   final String initialCategory;
 
@@ -25,12 +25,12 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   final supabase = Supabase.instance.client;
   final ImagePicker _picker = ImagePicker();
   
-  // Контроллеры текстовых полей
-  final _titleController = TextEditingController();
-  final _descController = TextEditingController();
-  final _apartmentController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _addressController = TextEditingController(text: "г. Кокшетау, ");
+  // Контроллеры для ввода данных
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
+  final TextEditingController _apartmentController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController(text: "г. Кокшетау, ");
   
   XFile? _selectedImage; 
   String _selectedPriority = 'medium'; 
@@ -39,10 +39,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   bool _isSaving = false;
   bool _isAILoading = false;
 
-  // Константы стиля
+  // Цветовая палитра (Dark Premium)
   final Color bgColor = const Color(0xFF0F0F0F);
   final Color cardColor = const Color(0xFF1C1C1E);
   final Color accentBlue = const Color(0xFF3383FF);
+  final Color fieldFillColor = const Color(0xFF2C2C2E);
 
   @override
   void initState() {
@@ -51,7 +52,17 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     _loadUserDefaultData();
   }
 
-  /// Автоматическая подгрузка данных пользователя для удобства
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    _apartmentController.dispose();
+    _phoneController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  /// Загрузка данных профиля (телефон и квартира) для автозаполнения
   Future<void> _loadUserDefaultData() async {
     try {
       final user = supabase.auth.currentUser;
@@ -60,24 +71,35 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             .from('profiles')
             .select('phone, apartment_number')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
         
-        setState(() {
-          if (data['phone'] != null) _phoneController.text = data['phone'].toString().replaceFirst('+7 ', '');
-          if (data['apartment_number'] != null) _apartmentController.text = data['apartment_number'].toString();
-        });
+        if (data != null && mounted) {
+          setState(() {
+            if (data['phone'] != null) {
+              // Убираем +7 если оно уже есть, так как префикс вшит в поле
+              String phone = data['phone'].toString();
+              _phoneController.text = phone.replaceFirst('+7 ', '').replaceFirst('+7', '');
+            }
+            if (data['apartment_number'] != null) {
+              _apartmentController.text = data['apartment_number'].toString();
+            }
+          });
+        }
       }
     } catch (e) {
-      debugPrint("Ошибка предзагрузки данных: $e");
+      debugPrint("Ошибка предзагрузки данных профиля: $e");
     }
   }
 
-  // --- ИНТЕГРАЦИЯ AI SERVICE ---
+  // --- ЛОГИКА AI (Генерация плана работ) ---
   Future<void> _analyzeWithAI(String lang) async {
     final text = _descController.text.trim();
     if (text.length < 10) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(lang == 'ru' ? "Опишите проблему подробнее для ИИ" : "ЖИ үшін мәселені толығырақ сипаттаңыз"))
+        SnackBar(
+          content: Text(lang == 'ru' ? "Опишите проблему подробнее для ИИ" : "ЖИ үшін мәселені толығырақ сипаттаңыз"),
+          backgroundColor: Colors.orange,
+        )
       );
       return;
     }
@@ -102,6 +124,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         }
       } else {
         setState(() {
+          // Добавляем результат ИИ к описанию
           _descController.text = "$text\n\n--- AI ACTION PLAN ---\n$result";
         });
         
@@ -127,7 +150,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     }
   }
 
-  // --- ЛОГИКА ЗАГРУЗКИ ФОТО ---
+  // --- ЗАГРУЗКА ИЗОБРАЖЕНИЯ В STORAGE ---
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
     try {
@@ -149,14 +172,14 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     }
   }
 
-  // --- СОХРАНЕНИЕ ЗАЯВКИ ---
+  // --- СОХРАНЕНИЕ ЗАЯВКИ В БАЗУ ---
   Future<void> _saveOrder(String lang) async {
-    // Валидация
+    // Валидация полей
     if (_titleController.text.isEmpty || _apartmentController.text.isEmpty || _descController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(lang == 'ru' ? "Заполните все обязательные поля!" : "Барлық міндетті өрістерді толтырыңыз!"),
-          backgroundColor: Colors.orangeAccent,
+          content: Text(lang == 'ru' ? "Заполните заголовок, квартиру и описание!" : "Тақырыпты, пәтерді және сипаттаманы толтырыңыз!"),
+          backgroundColor: Colors.redAccent,
         )
       );
       return;
@@ -165,11 +188,13 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     setState(() => _isSaving = true);
 
     try {
-      final String? imageUrl = await _uploadImage();
       final user = supabase.auth.currentUser;
+      if (user == null) return;
 
-      // Получаем building_id пользователя для связки с ОСИ
-      final userData = await supabase.from('profiles').select('building_id').eq('id', user!.id).single();
+      final String? imageUrl = await _uploadImage();
+
+      // Получаем building_id пользователя (ОСИ)
+      final userData = await supabase.from('profiles').select('building_id').eq('id', user.id).single();
 
       await supabase.from('tasks').insert({
         'title': _titleController.text.trim(),
@@ -191,7 +216,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка БД: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Ошибка сохранения: $e"), backgroundColor: Colors.redAccent)
+        );
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -204,27 +231,48 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Icon(LucideIcons.checkCircle, color: Colors.green, size: 50),
-        content: Text(
-          lang == 'ru' ? "Заявка успешно создана!" : "Өтінім сәтті қабылданды!",
-          textAlign: TextAlign.center, style: const TextStyle(color: Colors.white),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 20),
+            const Icon(LucideIcons.checkCircle, color: Colors.green, size: 64),
+            const SizedBox(height: 20),
+            Text(
+              lang == 'ru' ? "Готово!" : "Дайын!",
+              style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              lang == 'ru' ? "Ваша заявка принята в работу" : "Сіздің өтініміңіз жұмысқа қабылданды",
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70),
+            ),
+            const SizedBox(height: 30),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accentBlue,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                  padding: const EdgeInsets.symmetric(vertical: 15)
+                ),
+                onPressed: () {
+                  Navigator.pop(context); // закрыть диалог
+                  Navigator.pop(context, true); // вернуться назад с результатом true
+                },
+                child: const Text("ОТЛИЧНО", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // закрыть диалог
-              Navigator.pop(context, true); // вернуться на главный экран
-            },
-            child: const Text("OK", style: TextStyle(fontWeight: FontWeight.bold)),
-          )
-        ],
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // Слушаем изменение языка
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
       builder: (context, lang, child) {
@@ -239,126 +287,158 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             ),
             title: Text(
               lang == 'ru' ? "Новая заявка" : "Жаңа өтінім", 
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20)
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
             ),
             centerTitle: true,
           ),
-          body: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // БЛОК ВЫБОРА ФОТО
-                  _buildImagePickerSection(lang),
-                  
-                  const SizedBox(height: 24),
+          body: Stack(
+            children: [
+              GestureDetector(
+                onTap: () => FocusScope.of(context).unfocus(),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. ЗАГРУЗКА ФОТО
+                      _buildImagePickerSection(lang),
+                      
+                      const SizedBox(height: 25),
 
-                  // СЕКЦИЯ: ИНФОРМАЦИЯ О МЕСТЕ
-                  _buildSectionTitle(lang == 'ru' ? "Где произошло?" : "Қай жерде болды?"),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
-                    ),
-                    child: Column(
-                      children: [
-                        _buildModernField(_addressController, lang == 'ru' ? "Адрес" : "Мекен-жай", LucideIcons.mapPin),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8.0),
-                          child: Divider(color: Colors.white10, height: 1),
+                      // 2. АДРЕС И КОНТАКТЫ
+                      _buildSectionTitle(lang == 'ru' ? "Местоположение" : "Орналасқан жері"),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white.withOpacity(0.05)),
                         ),
-                        Row(
+                        child: Column(
                           children: [
-                            Expanded(child: _buildModernField(_apartmentController, "Кв. №", LucideIcons.home, keyboard: TextInputType.number)),
-                            Container(width: 1, height: 30, color: Colors.white10, margin: const EdgeInsets.symmetric(horizontal: 10)),
-                            Expanded(flex: 2, child: _buildModernField(_phoneController, "Телефон", LucideIcons.phone, keyboard: TextInputType.phone, prefix: "+7 ")),
+                            _buildModernField(_addressController, lang == 'ru' ? "Адрес" : "Мекен-жай", LucideIcons.mapPin),
+                            const Divider(color: Colors.white10, height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildModernField(
+                                    _apartmentController, 
+                                    "Кв. №", 
+                                    LucideIcons.home, 
+                                    keyboard: TextInputType.number
+                                  )
+                                ),
+                                Container(width: 1, height: 30, color: Colors.white10, margin: const EdgeInsets.symmetric(horizontal: 10)),
+                                Expanded(
+                                  flex: 2, 
+                                  child: _buildModernField(
+                                    _phoneController, 
+                                    "Телефон", 
+                                    LucideIcons.phone, 
+                                    keyboard: TextInputType.phone, 
+                                    prefix: "+7 "
+                                  )
+                                ),
+                              ],
+                            ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 25),
 
-                  // СЕКЦИЯ: ОПИСАНИЕ
-                  _buildSectionTitle(lang == 'ru' ? "Суть проблемы" : "Мәселе сипаты"),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: cardColor,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildModernField(_titleController, lang == 'ru' ? "Краткий заголовок" : "Қысқаша тақырып", LucideIcons.type),
-                        const Divider(color: Colors.white10, height: 20),
-                        _buildModernField(_descController, lang == 'ru' ? "Подробное описание..." : "Толық сипаттама...", LucideIcons.pencil, maxLines: 5),
-                        const SizedBox(height: 15),
-                        
-                        // КНОПКА ИИ МАГИИ
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: _buildAIButton(lang),
+                      // 3. ОПИСАНИЕ ПРОБЛЕМЫ
+                      _buildSectionTitle(lang == 'ru' ? "Детали проблемы" : "Мәселе мәліметтері"),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: Colors.white.withOpacity(0.05)),
                         ),
-                      ],
-                    ),
-                  ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildModernField(_titleController, lang == 'ru' ? "Что случилось?" : "Не болды?", LucideIcons.type),
+                            const Divider(color: Colors.white10, height: 20),
+                            _buildModernField(
+                              _descController, 
+                              lang == 'ru' ? "Опишите подробности..." : "Толығырақ сипаттаңыз...", 
+                              LucideIcons.pencil, 
+                              maxLines: 5
+                            ),
+                            const SizedBox(height: 15),
+                            
+                            // Кнопка ИИ
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: _buildAIButton(lang),
+                            ),
+                          ],
+                        ),
+                      ),
 
-                  const SizedBox(height: 24),
+                      const SizedBox(height: 25),
 
-                  // СЕКЦИЯ: ПРИОРИТЕТ
-                  _buildSectionTitle(lang == 'ru' ? "Срочность выполнения" : "Орындау мерзімділігі"),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _priorityTile('low', lang == 'ru' ? "Не к спеху" : "Асығыс емес", Colors.blueGrey),
-                      const SizedBox(width: 10),
-                      _priorityTile('medium', lang == 'ru' ? "Обычная" : "Қалыпты", Colors.orange),
-                      const SizedBox(width: 10),
-                      _priorityTile('high', lang == 'ru' ? "Срочно!" : "Шұғыл!", Colors.redAccent),
+                      // 4. ПРИОРИТЕТ
+                      _buildSectionTitle(lang == 'ru' ? "Приоритет" : "Приоритет"),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          _priorityTile('low', lang == 'ru' ? "Низкий" : "Төмен", Colors.blueGrey),
+                          const SizedBox(width: 10),
+                          _priorityTile('medium', lang == 'ru' ? "Средний" : "Орташа", Colors.orange),
+                          const SizedBox(width: 10),
+                          _priorityTile('high', lang == 'ru' ? "Высокий" : "Жоғары", Colors.redAccent),
+                        ],
+                      ),
+
+                      const SizedBox(height: 40),
+
+                      // 5. КНОПКА ОТПРАВКИ
+                      _buildSubmitButton(lang),
+                      
+                      const SizedBox(height: 50),
                     ],
                   ),
-
-                  const SizedBox(height: 40),
-
-                  // ФИНАЛЬНАЯ КНОПКА
-                  _buildSubmitButton(lang),
-                  
-                  const SizedBox(height: 40),
-                ],
+                ),
               ),
-            ),
+              
+              // Индикатор общего сохранения
+              if (_isSaving)
+                Container(
+                  color: Colors.black54,
+                  child: const Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
+                ),
+            ],
           ),
         );
       },
     );
   }
 
-  // --- ВСПОМОГАТЕЛЬНЫЕ ВИДЖЕТЫ ---
+  // --- ВИДЖЕТЫ-ПОМОЩНИКИ ---
 
   Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+    return Padding(
+      padding: const EdgeInsets.only(left: 8.0),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+      ),
     );
   }
 
   Widget _buildImagePickerSection(String lang) {
     return GestureDetector(
       onTap: () async {
-        final img = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+        final img = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
         if (img != null) setState(() => _selectedImage = img);
       },
       child: Container(
-        height: 160,
+        height: 180,
         width: double.infinity,
         decoration: BoxDecoration(
           color: cardColor,
@@ -375,21 +455,30 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(15),
                     decoration: BoxDecoration(color: accentBlue.withOpacity(0.1), shape: BoxShape.circle),
-                    child: Icon(LucideIcons.camera, color: accentBlue, size: 30),
+                    child: Icon(LucideIcons.imagePlus, color: accentBlue, size: 32),
                   ),
                   const SizedBox(height: 12),
-                  Text(lang == 'ru' ? "Добавить фото поломки" : "Бұзылу суретін қосу", 
-                    style: TextStyle(color: Colors.white.withOpacity(0.6), fontWeight: FontWeight.w500)),
+                  Text(lang == 'ru' ? "Прикрепить фото" : "Суреттіแนบ", 
+                    style: TextStyle(color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w500)),
                 ],
               )
-            : Align(
-                alignment: Alignment.topRight,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => setState(() => _selectedImage = null),
-                ),
+            : Stack(
+                children: [
+                  Positioned(
+                    right: 10,
+                    top: 10,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedImage = null),
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ],
               ),
       ),
     );
@@ -399,27 +488,30 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     return InkWell(
       onTap: _isAILoading ? null : () => _analyzeWithAI(lang),
       borderRadius: BorderRadius.circular(15),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: _isAILoading ? [Colors.grey, Colors.grey] : [const Color(0xFF8E2DE2), const Color(0xFF4A00E0)],
+            colors: _isAILoading 
+              ? [Colors.grey, Colors.grey] 
+              : [const Color(0xFF6A11CB), const Color(0xFF2575FC)],
           ),
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(12),
           boxShadow: [
-            BoxShadow(color: Colors.purple.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))
+            if (!_isAILoading) BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
           ],
         ),
         child: _isAILoading 
-          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-          : Row(
+          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+          : const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(LucideIcons.sparkles, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
+                Icon(LucideIcons.sparkles, color: Colors.white, size: 16),
+                SizedBox(width: 8),
                 Text(
-                  lang == 'ru' ? "Помощь ИИ" : "ЖИ көмегі", 
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)
+                  "AI ASSISTANT", 
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)
                 ),
               ],
             ),
@@ -433,10 +525,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       maxLines: maxLines,
       keyboardType: keyboard,
       style: const TextStyle(color: Colors.white, fontSize: 16),
+      cursorColor: accentBlue,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 15),
-        prefixIcon: Icon(icon, color: accentBlue.withOpacity(0.6), size: 20),
+        prefixIcon: Icon(icon, color: accentBlue.withOpacity(0.7), size: 20),
         prefixText: prefix,
         prefixStyle: const TextStyle(color: Colors.white, fontSize: 16),
         border: InputBorder.none,
@@ -452,17 +545,17 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         onTap: () => setState(() => _selectedPriority = value),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.15) : cardColor,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: isSelected ? color : Colors.white10, width: 2),
+            color: isSelected ? color.withOpacity(0.2) : cardColor,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: isSelected ? color : Colors.white.withOpacity(0.05), width: 1.5),
           ),
           child: Center(
             child: Text(label, style: TextStyle(
-              color: isSelected ? color : Colors.white38, 
+              color: isSelected ? Colors.white : Colors.white38, 
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, 
-              fontSize: 13)),
+              fontSize: 12)),
           ),
         ),
       ),
@@ -470,29 +563,22 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   }
 
   Widget _buildSubmitButton(String lang) {
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      height: 65,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(colors: [accentBlue, const Color(0xFF1A56BE)]),
-        boxShadow: [
-          BoxShadow(color: accentBlue.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
-        ],
-      ),
+      height: 60,
       child: ElevatedButton(
         onPressed: _isSaving ? null : () => _saveOrder(lang),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          backgroundColor: accentBlue,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          elevation: 8,
+          shadowColor: accentBlue.withOpacity(0.4),
         ),
-        child: _isSaving 
-          ? const CircularProgressIndicator(color: Colors.white) 
-          : Text(
-              lang == 'ru' ? "Оформить заявку" : "Өтінімді жіберу", 
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)
-            ),
+        child: Text(
+          lang == 'ru' ? "ОТПРАВИТЬ ЗАЯВКУ" : "ӨТІНІМДІ ЖІБЕРУ", 
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.1)
+        ),
       ),
     );
   }

@@ -1,3 +1,13 @@
+import java.util.Properties
+import java.io.FileInputStream
+
+// 1. Загрузка свойств из key.properties (делаем это один раз в самом верху)
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,6 +15,7 @@ plugins {
 }
 
 android {
+    // ВНИМАНИЕ: Проверь, чтобы этот ID совпадал с ID в Google Play Console!
     namespace = "com.example.fixly_app" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -18,16 +29,15 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
-    // ЯВНОЕ ОПРЕДЕЛЕНИЕ ПОДПИСИ
-signingConfigs {
-        getByName("debug") {
-            val keystoreFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
-            if (keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
-            }
+    // 2. Настройка подписи (Signing)
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storePassword = keystoreProperties.getProperty("storePassword")
+            // Файл ищем в текущей папке (android/app/)
+            val stFile = keystoreProperties.getProperty("storeFile")
+            storeFile = if (stFile != null) file(stFile) else null
         }
     }
 
@@ -41,8 +51,8 @@ signingConfigs {
 
     buildTypes {
         release {
-            // Используем ту же подпись, что и в дебаге для тестов
-            signingConfig = signingConfigs.getByName("debug")
+            // Указываем использовать созданный выше конфиг "release"
+            signingConfig = signingConfigs.getByName("release")
             
             isMinifyEnabled = false
             isShrinkResources = false
@@ -52,6 +62,7 @@ signingConfigs {
             )
         }
         debug {
+            // Для отладки используем стандартную подпись
             signingConfig = signingConfigs.getByName("debug")
         }
     }
