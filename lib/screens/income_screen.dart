@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import 'package:fixly_app/main.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:intl/intl.dart';
+import 'package:fixly_app/main.dart';
 
+// ============================================================
+//  IncomeScreen — доходы мастера
+//  • Статистика из таблицы tasks (статус completed)
+//  • График доходов по месяцам (кастомный BarChart)
+//  • Фильтр по периоду: неделя / месяц / год
+//  • Список последних завершённых заказов
+//  • Средний чек, лучший месяц
+// ============================================================
 class IncomeScreen extends StatefulWidget {
   const IncomeScreen({super.key});
 
@@ -10,203 +19,504 @@ class IncomeScreen extends StatefulWidget {
   State<IncomeScreen> createState() => _IncomeScreenState();
 }
 
-class _IncomeScreenState extends State<IncomeScreen> {
-  // Переменная для хранения цели
-  double _goal = 500000;
+class _IncomeScreenState extends State<IncomeScreen>
+    with SingleTickerProviderStateMixin {
+  final _supabase = Supabase.instance.client;
+
+  bool   _isLoading   = true;
+  String _period      = 'month'; // week | month | year
+
+  // Данные
+  double              _totalIncome    = 0;
+  double              _avgCheck       = 0;
+  int                 _completedCount = 0;
+  double              _bestMonthIncome = 0;
+  String              _bestMonthLabel  = '';
+  List<_MonthData>    _chartData      = [];
+  List<Map<String, dynamic>> _recentOrders = [];
+
+  late TabController _tabCtrl;
 
   @override
   void initState() {
     super.initState();
-    _fetchGoal();
-  }
-
-  // Получаем цель из БД при запуске
-  Future<void> _fetchGoal() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-    final data = await Supabase.instance.client
-        .from('profiles')
-        .select('earning_goal')
-        .eq('id', user.id)
-        .maybeSingle();
-    
-    if (data != null && data['earning_goal'] != null) {
-      setState(() {
-        _goal = (data['earning_goal'] as num).toDouble();
-      });
-    }
-  }
-
-  // Метод для обновления цели в БД
-Future<void> _updateGoal(double newGoal) async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) return;
-
-    // 1. Обновляем в БД
-    await Supabase.instance.client
-        .from('profiles')
-        .update({'earning_goal': newGoal})
-        .eq('id', user.id);
-    
-    // 2. Обновляем локально состояние, чтобы UI перерисовался моментально
-    setState(() {
-      _goal = newGoal;
-    });
-  }
-
-  Future<Map<String, dynamic>> _getRealStats() async {
-    final supabase = Supabase.instance.client;
-    final user = supabase.auth.currentUser;
-    if (user == null) return {};
-
-    try {
-      final profileData = await supabase
-          .from('profiles')
-          .select('avg_rating')
-          .eq('id', user.id)
-          .maybeSingle();
-
-      final tasksResponse = await supabase
-          .from('tasks')
-          .select('final_price, created_at, title')
-          .eq('assignee_id', user.id)
-          .eq('status', 'completed')
-          .order('created_at', ascending: false);
-
-      double calculatedSum = 0;
-      List recentTransactions = [];
-      
-      if (tasksResponse != null) {
-        recentTransactions = tasksResponse;
-        for (var task in tasksResponse) {
-          final val = task['final_price'];
-          if (val != null) {
-            calculatedSum += double.tryParse(val.toString()) ?? 0.0;
-          }
-        }
+    _tabCtrl = TabController(length: 3, vsync: this);
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) {
+        final periods = ['week', 'month', 'year'];
+        setState(() => _period = periods[_tabCtrl.index]);
+        _loadData();
       }
-
-      return {
-        'earned': calculatedSum,
-        'completed': recentTransactions.length,
-        'rating': profileData?['avg_rating'] ?? 5.0,
-        'recent': recentTransactions,
-      };
-    } catch (e) {
-      debugPrint("Ошибка статистики: $e");
-      return {'earned': 0, 'completed': 0, 'rating': 0.0, 'recent': []};
-    }
+    });
+    _loadData();
   }
 
   @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── ЗАГРУЗКА ДАННЫХ ──────────────────────────────────────
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      // Определяем диапазон дат
+      final now   = DateTime.now();
+      DateTime from;
+      switch (_period) {
+        case 'week' : from = now.subtract(const Duration(days: 7));  break;
+        case 'year' : from = DateTime(now.year - 1, now.month, 1);   break;
+        default     : from = DateTime(now.year, now.month - 5, 1);   // 6 месяцев
+      }
+
+      final response = await _supabase
+          .from('tasks')
+          .select('id, title, final_price, price, created_at, customer_name')
+          .eq('master_id', userId)
+          .eq('status', 'completed')
+          .gte('created_at', from.toIso8601String())
+          .order('created_at', ascending: false);
+
+      final orders = List<Map<String, dynamic>>.from(response as List);
+
+      // ── Считаем статистику ────────────────────────────────
+      double total = 0;
+      final Map<String, double> byMonth = {};
+
+      for (final o in orders) {
+        final amount = ((o['final_price'] ?? o['price']) as num?)?.toDouble() ?? 0;
+        total += amount;
+
+        final date = DateTime.tryParse(o['created_at']?.toString() ?? '') ?? now;
+        final key  = DateFormat('MMM yy', 'ru').format(date);
+        byMonth[key] = (byMonth[key] ?? 0) + amount;
+      }
+
+      // Строим данные графика — последние 6 месяцев
+      final chartData = <_MonthData>[];
+      for (int i = 5; i >= 0; i--) {
+        final m    = DateTime(now.year, now.month - i, 1);
+        final key  = DateFormat('MMM yy', 'ru').format(m);
+        final val  = byMonth[key] ?? 0;
+        chartData.add(_MonthData(
+          label : DateFormat('MMM', 'ru').format(m),
+          amount: val,
+        ));
+      }
+
+      // Лучший месяц
+      double bestVal    = 0;
+      String bestLabel  = '';
+      for (final e in byMonth.entries) {
+        if (e.value > bestVal) { bestVal = e.value; bestLabel = e.key; }
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalIncome    = total;
+          _completedCount = orders.length;
+          _avgCheck       = orders.isEmpty ? 0 : total / orders.length;
+          _chartData      = chartData;
+          _bestMonthIncome = bestVal;
+          _bestMonthLabel  = bestLabel;
+          _recentOrders   = orders.take(10).toList();
+          _isLoading      = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('IncomeScreen load error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ── BUILD ─────────────────────────────────────────────────
+  @override
   Widget build(BuildContext context) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
+    final cardBg  = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
-      builder: (context, lang, child) {
+      builder: (context, lang, _) {
         return Scaffold(
+          backgroundColor: bgColor,
           appBar: AppBar(
-            title: Text(lang == 'ru' ? "Мои доходы" : "Менің табысым"),
+            backgroundColor: cardBg,
+            elevation: 0,
+            title: Text(
+              lang == 'ru' ? 'Мои доходы' : 'Менің табысым',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+            ),
             centerTitle: true,
+            iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+            bottom: TabBar(
+              controller: _tabCtrl,
+              labelColor: Colors.blueAccent,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: Colors.blueAccent,
+              tabs: [
+                Tab(text: lang == 'ru' ? 'Неделя' : 'Апта'),
+                Tab(text: lang == 'ru' ? '6 месяцев' : '6 ай'),
+                Tab(text: lang == 'ru' ? 'Год' : 'Жыл'),
+              ],
+            ),
           ),
-          body: FutureBuilder<Map<String, dynamic>>(
-            future: _getRealStats(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Главная карточка с суммой
+                        _buildTotalCard(lang, isDark, cardBg),
+                        const SizedBox(height: 16),
 
-              final data = snapshot.data ?? {};
-              final recent = data['recent'] as List? ?? [];
-              double earned = (data['earned'] ?? 0).toDouble();
+                        // Строка метрик
+                        _buildMetricsRow(lang, isDark, cardBg),
+                        const SizedBox(height: 20),
 
-              return RefreshIndicator(
-                onRefresh: () async {
-                   setState(() {});
-                },
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildBlueCard(data, lang),
-                      const SizedBox(height: 30),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildSectionHeader(lang == 'ru' ? "Цель на месяц" : "Айлық мақсат"),
-                          IconButton(
-                            icon: const Icon(LucideIcons.edit3, size: 18),
-                            onPressed: () => _showEditDialog(lang),
-                          )
-                        ],
-                      ),
-                      _buildGoalCard(earned, _goal, lang),
-                      const SizedBox(height: 30),
-                      _buildSectionHeader(lang == 'ru' ? "Последние выплаты" : "Соңғы төлемдер"),
-                      if (recent.isEmpty)
-                        _buildEmptyState(lang)
-                      else
-                        ...recent.take(10).map((order) => _buildTransactionItem(order, isDark)).toList(),
-                      const SizedBox(height: 100),
-                    ],
+                        // График
+                        Text(
+                          lang == 'ru' ? 'Доход по месяцам' : 'Айлық табыс',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildBarChart(isDark, cardBg),
+                        const SizedBox(height: 24),
+
+                        // Последние заказы
+                        Text(
+                          lang == 'ru' ? 'Последние заказы' : 'Соңғы тапсырыстар',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _recentOrders.isEmpty
+                            ? _buildEmpty(lang)
+                            : Column(
+                                children: _recentOrders
+                                    .map((o) => _buildOrderRow(o, lang, isDark, cardBg))
+                                    .toList(),
+                              ),
+                        const SizedBox(height: 24),
+                      ],
+                    ),
                   ),
                 ),
-              );
-            },
-          ),
         );
       },
     );
   }
 
-  void _showEditDialog(String lang) {
-    final TextEditingController controller = TextEditingController(text: _goal.toInt().toString());
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(lang == 'ru' ? "Изменить цель" : "Мақсатты өзгерту"),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: "₸"),
+  // ── ГЛАВНАЯ КАРТОЧКА ─────────────────────────────────────
+  Widget _buildTotalCard(String lang, bool isDark, Color cardBg) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4361EE), Color(0xFF3A0CA3)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(lang == 'ru' ? "Отмена" : "Болдырмау")),
-          ElevatedButton(
-            onPressed: () {
-              _updateGoal(double.tryParse(controller.text) ?? 500000);
-              Navigator.pop(context);
-            },
-            child: Text(lang == 'ru' ? "Сохранить" : "Сақтау"),
+        borderRadius: BorderRadius.circular(22),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(LucideIcons.wallet, color: Colors.white70, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                lang == 'ru' ? 'Общий доход' : 'Жалпы табыс',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '${_numFmt(_totalIncome)} ₸',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 36,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1,
+            ),
+          ),
+          if (_bestMonthLabel.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                '${lang == 'ru' ? 'Лучший месяц' : 'Ең жақсы ай'}: $_bestMonthLabel — ${_numFmt(_bestMonthIncome)} ₸',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── МЕТРИКИ ──────────────────────────────────────────────
+  Widget _buildMetricsRow(String lang, bool isDark, Color cardBg) {
+    return Row(
+      children: [
+        _metricCard(
+          label : lang == 'ru' ? 'Заказов' : 'Тапсырыс',
+          value : '$_completedCount',
+          icon  : LucideIcons.checkCircle,
+          color : Colors.green,
+          isDark: isDark,
+          cardBg: cardBg,
+        ),
+        const SizedBox(width: 12),
+        _metricCard(
+          label : lang == 'ru' ? 'Средний чек' : 'Орт. төлем',
+          value : '${_numFmt(_avgCheck)} ₸',
+          icon  : LucideIcons.trendingUp,
+          color : Colors.orange,
+          isDark: isDark,
+          cardBg: cardBg,
+        ),
+      ],
+    );
+  }
+
+  Widget _metricCard({
+    required String   label,
+    required String   value,
+    required IconData icon,
+    required Color    color,
+    required bool     isDark,
+    required Color    cardBg,
+  }) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : Colors.black45)),
+                  Text(value,
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black87),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── БАР-ГРАФИК ───────────────────────────────────────────
+  Widget _buildBarChart(bool isDark, Color cardBg) {
+    if (_chartData.isEmpty) {
+      return Container(
+        height: 160,
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Center(
+          child: Text('Нет данных', style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+
+    final maxVal = _chartData.map((d) => d.amount).reduce((a, b) => a > b ? a : b);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade100,
+        ),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 140,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: _chartData.map((d) {
+                final pct = maxVal > 0 ? d.amount / maxVal : 0.0;
+                final isMax = d.amount == maxVal && maxVal > 0;
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // Сумма над баром
+                        if (d.amount > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              _shortNum(d.amount),
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: isMax
+                                    ? Colors.blueAccent
+                                    : (isDark ? Colors.white54 : Colors.black45),
+                              ),
+                            ),
+                          ),
+                        // Сам бар
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 600),
+                          curve: Curves.easeOutCubic,
+                          height: pct * 100,
+                          decoration: BoxDecoration(
+                            color: isMax
+                                ? Colors.blueAccent
+                                : Colors.blueAccent.withOpacity(0.35),
+                            borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(6)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: _chartData
+                .map((d) => Expanded(
+                      child: Text(
+                        d.label,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 10, color: Colors.grey),
+                      ),
+                    ))
+                .toList(),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBlueCard(Map<String, dynamic> data, String lang) {
+  // ── СТРОКА ЗАКАЗА ────────────────────────────────────────
+  Widget _buildOrderRow(
+      Map<String, dynamic> order, String lang, bool isDark, Color cardBg) {
+    final amount = ((order['final_price'] ?? order['price']) as num?)?.toDouble() ?? 0;
+    final date   = DateTime.tryParse(order['created_at']?.toString() ?? '') ?? DateTime.now();
+    final name   = order['customer_name']?.toString() ?? '—';
+    final title  = order['title']?.toString() ?? '—';
+
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF2979FF), Color(0xFF1565C0)]),
-        borderRadius: BorderRadius.circular(24),
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade100,
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(lang == 'ru' ? "Заработано всего" : "Жалпы табыс", style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 8),
-          Text("${(data['earned'] as double).toInt()} ₸", style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(LucideIcons.checkCircle,
+                color: Colors.green, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: isDark ? Colors.white : Colors.black87),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                Text(name,
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.grey)),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _buildMiniStat(LucideIcons.checkCircle, lang == 'ru' ? "Заказы" : "Тапсырыс", "${data['completed']}"),
-              _buildMiniStat(LucideIcons.star, lang == 'ru' ? "Рейтинг" : "Рейтинг", "${data['rating']}"),
+              Text(
+                '+${_numFmt(amount)} ₸',
+                style: const TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+              Text(
+                DateFormat('dd.MM.yy').format(date),
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
             ],
           ),
         ],
@@ -214,52 +524,38 @@ Future<void> _updateGoal(double newGoal) async {
     );
   }
 
-  Widget _buildTransactionItem(Map<String, dynamic> order, bool isDark) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(backgroundColor: Colors.green.withOpacity(0.1), child: const Icon(LucideIcons.arrowDownLeft, color: Colors.green)),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(order['title'] ?? "Заказ", style: const TextStyle(fontWeight: FontWeight.bold)),
-              Text(order['created_at'].toString().split('T')[0], style: const TextStyle(fontSize: 12, color: Colors.grey)),
-            ]),
+  Widget _buildEmpty(String lang) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(LucideIcons.walletMinimal,
+                  size: 52, color: Colors.grey.withOpacity(0.3)),
+              const SizedBox(height: 12),
+              Text(
+                lang == 'ru' ? 'Завершённых заказов нет' : 'Аяқталған тапсырыс жоқ',
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ],
           ),
-          Text("+${(order['final_price'] ?? 0).toInt()} ₸", style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-        ],
-      ),
-    );
+        ),
+      );
+
+  // Форматирование чисел
+  String _numFmt(double v) {
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}М';
+    if (v >= 1000)    return '${(v / 1000).toStringAsFixed(0)}К';
+    return v.toInt().toString();
   }
 
-  Widget _buildMiniStat(IconData icon, String label, String value) {
-    return Row(children: [
-      Icon(icon, color: Colors.white, size: 18),
-      const SizedBox(width: 8),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.white60, fontSize: 10)),
-      ])
-    ]);
+  String _shortNum(double v) {
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(0)}к';
+    return v.toInt().toString();
   }
+}
 
-  Widget _buildSectionHeader(String title) => Padding(padding: const EdgeInsets.only(bottom: 15), child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)));
-  Widget _buildEmptyState(String lang) => Center(child: Text(lang == 'ru' ? "Тут пока пусто" : "Әзірге бос", style: const TextStyle(color: Colors.grey)));
-  Widget _buildGoalCard(double current, double goal, String lang) {
-    double progress = goal > 0 ? (current / goal).clamp(0.0, 1.0) : 0.0;
-    return Column(children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text("${(progress * 100).toInt()}%", style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-        Text("${goal.toInt()} ₸"),
-      ]),
-      const SizedBox(height: 8),
-      LinearProgressIndicator(value: progress, backgroundColor: Colors.blue.withOpacity(0.1), valueColor: const AlwaysStoppedAnimation(Colors.blue)),
-    ]);
-  }
+class _MonthData {
+  final String label;
+  final double amount;
+  const _MonthData({required this.label, required this.amount});
 }

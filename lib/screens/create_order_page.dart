@@ -1,20 +1,32 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fixly_app/main.dart'; // Путь к вашему main.dart для доступа к appLanguage
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:fixly_app/services/ai_service.dart';
+import 'package:fixly_app/main.dart';
+import 'package:fixly_app/screens/orders_page.dart';
 
-/// Страница создания новой заявки
-/// Особенности: Поддержка темной темы, Интеграция с ИИ, Загрузка фото в Supabase Storage
+// ============================================================
+//  CreateOrderPage — создание заявки
+//  • Полная валидация всех полей
+//  • Загрузка фото в Supabase Storage
+//  • Prefill из YOLO (описание + категория)
+//  • Prefill из профиля мастера (masterId + masterName)
+//  • Выбор специализации через chips
+//  • Выбор приоритета
+// ============================================================
 class CreateOrderPage extends StatefulWidget {
-  final String initialCategory;
+  final String  masterId;
+  final String  masterName;
+  final String  initialCategory;
+  final String  prefillDescription; // из YOLO-сканера
 
   const CreateOrderPage({
-    super.key, 
-    required this.initialCategory, required masterId, required masterName, required String prefillDescription,
+    super.key,
+    this.masterId          = '',
+    this.masterName        = '',
+    this.initialCategory   = '',
+    this.prefillDescription = '',
   });
 
   @override
@@ -22,247 +34,110 @@ class CreateOrderPage extends StatefulWidget {
 }
 
 class _CreateOrderPageState extends State<CreateOrderPage> {
-  final supabase = Supabase.instance.client;
-  final ImagePicker _picker = ImagePicker();
-  
-  // Контроллеры для ввода данных
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _descController = TextEditingController();
-  final TextEditingController _apartmentController = TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _addressController = TextEditingController(text: "г. Кокшетау, ");
-  
-  XFile? _selectedImage; 
-  String _selectedPriority = 'medium'; 
-  late String _currentCategory;
-  
-  bool _isSaving = false;
-  bool _isAILoading = false;
+  final _supabase   = Supabase.instance.client;
+  final _titleCtrl  = TextEditingController();
+  final _descCtrl   = TextEditingController();
+  final _addrCtrl   = TextEditingController();
+  final _priceCtrl  = TextEditingController();
+  final _formKey    = GlobalKey<FormState>();
 
-  // Цветовая палитра (Dark Premium)
-  final Color bgColor = const Color(0xFF0F0F0F);
-  final Color cardColor = const Color(0xFF1C1C1E);
-  final Color accentBlue = const Color(0xFF3383FF);
-  final Color fieldFillColor = const Color(0xFF2C2C2E);
+  bool   _isLoading  = false;
+  String _category   = '';
+  String _priority   = 'medium';
+  File?  _photoFile;
+  String? _errorMsg;
+  String? _userApartment;
+  String? _userAddress;
+
+  // Специализации
+  static const _categories = {
+    'plumber'    : {'ru': 'Сантехник',   'kz': 'Сантехник',   'icon': LucideIcons.droplets},
+    'electrician': {'ru': 'Электрик',    'kz': 'Электрик',    'icon': LucideIcons.zap},
+    'painter'    : {'ru': 'Отделочник',  'kz': 'Жөндеуші',    'icon': LucideIcons.paintbrush},
+    'carpenter'  : {'ru': 'Плотник',     'kz': 'Ұста',        'icon': LucideIcons.hammer},
+    'welder'     : {'ru': 'Сварщик',     'kz': 'Дәнекерші',   'icon': LucideIcons.flame},
+    'locksmith'  : {'ru': 'Слесарь',     'kz': 'Слесарь',     'icon': LucideIcons.keyRound},
+    'cleaner'    : {'ru': 'Уборщик',     'kz': 'Тазалаушы',   'icon': LucideIcons.sparkles},
+    'general'    : {'ru': 'Другое',      'kz': 'Басқа',       'icon': LucideIcons.wrench},
+  };
 
   @override
   void initState() {
     super.initState();
-    _currentCategory = widget.initialCategory;
-    _loadUserDefaultData();
+    _category = widget.initialCategory.isNotEmpty
+        ? widget.initialCategory
+        : 'general';
+    if (widget.prefillDescription.isNotEmpty) {
+      _descCtrl.text = widget.prefillDescription;
+    }
+    _loadUserProfile();
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
-    _descController.dispose();
-    _apartmentController.dispose();
-    _phoneController.dispose();
-    _addressController.dispose();
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _addrCtrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
-  /// Загрузка данных профиля (телефон и квартира) для автозаполнения
-  Future<void> _loadUserDefaultData() async {
+  Future<void> _loadUserProfile() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return;
     try {
-      final user = supabase.auth.currentUser;
-      if (user != null) {
-        final data = await supabase
-            .from('profiles')
-            .select('phone, apartment_number')
-            .eq('id', user.id)
-            .maybeSingle();
-        
-        if (data != null && mounted) {
-          setState(() {
-            if (data['phone'] != null) {
-              // Убираем +7 если оно уже есть, так как префикс вшит в поле
-              String phone = data['phone'].toString();
-              _phoneController.text = phone.replaceFirst('+7 ', '').replaceFirst('+7', '');
-            }
-            if (data['apartment_number'] != null) {
-              _apartmentController.text = data['apartment_number'].toString();
-            }
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Ошибка предзагрузки данных профиля: $e");
-    }
-  }
-
-  // --- ЛОГИКА AI (Генерация плана работ) ---
-  Future<void> _analyzeWithAI(String lang) async {
-    final text = _descController.text.trim();
-    if (text.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(lang == 'ru' ? "Опишите проблему подробнее для ИИ" : "ЖИ үшін мәселені толығырақ сипаттаңыз"),
-          backgroundColor: Colors.orange,
-        )
-      );
-      return;
-    }
-
-    setState(() => _isAILoading = true);
-
-    try {
-      final result = await AIService.generateActionPlan(
-        _titleController.text.isEmpty ? "Заявка" : _titleController.text,
-        text,
-        lang,
-      );
-
-      if (result.startsWith("ERROR")) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("Ошибка ИИ: ${result.replaceAll('ERROR_', '')}"),
-              backgroundColor: Colors.redAccent,
-            )
-          );
-        }
-      } else {
+      final profile = await _supabase
+          .from('profiles')
+          .select('apartment_number, building_id, buildings(address)')
+          .eq('id', uid)
+          .maybeSingle();
+      if (profile != null && mounted) {
+        final apt     = profile['apartment_number']?.toString() ?? '';
+        final building = (profile['buildings'] as Map?)??{};
+        final addr    = building['address']?.toString() ?? '';
         setState(() {
-          // Добавляем результат ИИ к описанию
-          _descController.text = "$text\n\n--- AI ACTION PLAN ---\n$result";
+          _userApartment = apt;
+          _userAddress   = addr;
+          if (_addrCtrl.text.isEmpty && addr.isNotEmpty) {
+            _addrCtrl.text = addr;
+          }
         });
-        
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(LucideIcons.sparkles, color: Colors.white, size: 18),
-                  SizedBox(width: 10),
-                  Text("✨ ИИ сформировал план решения"),
-                ],
-              ),
-              backgroundColor: Colors.purpleAccent,
-            )
-          );
-        }
       }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка: $e")));
-    } finally {
-      if (mounted) setState(() => _isAILoading = false);
-    }
+    } catch (e) { debugPrint('loadUserProfile: $e'); }
   }
 
-  // --- ЗАГРУЗКА ИЗОБРАЖЕНИЯ В STORAGE ---
-  Future<String?> _uploadImage() async {
-    if (_selectedImage == null) return null;
-    try {
-      final bytes = await _selectedImage!.readAsBytes();
-      final fileExt = _selectedImage!.path.split('.').last;
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-      final filePath = 'task_images/$fileName';
-
-      await supabase.storage.from('task_images').uploadBinary(
-        filePath,
-        bytes,
-        fileOptions: FileOptions(contentType: 'image/$fileExt'),
-      );
-
-      return supabase.storage.from('task_images').getPublicUrl(filePath);
-    } catch (e) {
-      debugPrint("Ошибка загрузки фото: $e");
-      return null;
-    }
-  }
-
-  // --- СОХРАНЕНИЕ ЗАЯВКИ В БАЗУ ---
-  Future<void> _saveOrder(String lang) async {
-    // Валидация полей
-    if (_titleController.text.isEmpty || _apartmentController.text.isEmpty || _descController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(lang == 'ru' ? "Заполните заголовок, квартиру и описание!" : "Тақырыпты, пәтерді және сипаттаманы толтырыңыз!"),
-          backgroundColor: Colors.redAccent,
-        )
-      );
-      return;
-    }
-
-    setState(() => _isSaving = true);
-
-    try {
-      final user = supabase.auth.currentUser;
-      if (user == null) return;
-
-      final String? imageUrl = await _uploadImage();
-
-      // Получаем building_id пользователя (ОСИ)
-      final userData = await supabase.from('profiles').select('building_id').eq('id', user.id).single();
-
-      await supabase.from('tasks').insert({
-        'title': _titleController.text.trim(),
-        'description': _descController.text.trim(),
-        'apartment': _apartmentController.text.trim(),
-        'address': _addressController.text.trim(),
-        'resident_phone': "+7 ${_phoneController.text.trim()}",
-        'priority': _selectedPriority,
-        'category': _currentCategory,
-        'status': 'new',
-        'user_id': user.id,
-        'building_id': userData['building_id'],
-        'image_url': imageUrl,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-
-      if (mounted) {
-        _showSuccessDialog(lang);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Ошибка сохранения: $e"), backgroundColor: Colors.redAccent)
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  void _showSuccessDialog(String lang) {
-    showDialog(
+  // ── ВЫБОР ФОТО ────────────────────────────────────────────
+  Future<void> _pickPhoto() async {
+    final lang = appLanguage.value;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        content: Column(
+      backgroundColor: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 20),
-            const Icon(LucideIcons.checkCircle, color: Colors.green, size: 64),
-            const SizedBox(height: 20),
-            Text(
-              lang == 'ru' ? "Готово!" : "Дайын!",
-              style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+            ListTile(
+              leading: const Icon(LucideIcons.camera, color: Colors.blueAccent),
+              title: Text(lang == 'ru' ? 'Сделать фото' : 'Суретке түсіру'),
+              onTap: () async {
+                Navigator.pop(context);
+                final f = await ImagePicker()
+                    .pickImage(source: ImageSource.camera, imageQuality: 80);
+                if (f != null) setState(() => _photoFile = File(f.path));
+              },
             ),
-            const SizedBox(height: 10),
-            Text(
-              lang == 'ru' ? "Ваша заявка принята в работу" : "Сіздің өтініміңіз жұмысқа қабылданды",
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 30),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accentBlue,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                  padding: const EdgeInsets.symmetric(vertical: 15)
-                ),
-                onPressed: () {
-                  Navigator.pop(context); // закрыть диалог
-                  Navigator.pop(context, true); // вернуться назад с результатом true
-                },
-                child: const Text("ОТЛИЧНО", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
+            ListTile(
+              leading: const Icon(LucideIcons.image, color: Colors.blueAccent),
+              title: Text(lang == 'ru' ? 'Выбрать из галереи' : 'Галереядан таңдау'),
+              onTap: () async {
+                Navigator.pop(context);
+                final f = await ImagePicker()
+                    .pickImage(source: ImageSource.gallery, imageQuality: 80);
+                if (f != null) setState(() => _photoFile = File(f.path));
+              },
             ),
           ],
         ),
@@ -270,316 +145,569 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     );
   }
 
+  // ── СОЗДАТЬ ЗАЯВКУ ────────────────────────────────────────
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_category.isEmpty) {
+      setState(() => _errorMsg = appLanguage.value == 'ru'
+          ? 'Выберите тип услуги'
+          : 'Қызмет түрін таңдаңыз');
+      return;
+    }
+
+    setState(() { _isLoading = true; _errorMsg = null; });
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      String? imageUrl;
+
+      // Загружаем фото в Storage
+      if (_photoFile != null) {
+        final ext   = _photoFile!.path.split('.').last;
+        final path  = 'orders/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final bytes = await _photoFile!.readAsBytes();
+        await _supabase.storage.from('documents').uploadBinary(path, bytes);
+        imageUrl = _supabase.storage.from('documents').getPublicUrl(path);
+      }
+
+      // Формируем данные заявки
+      final data = <String, dynamic>{
+        'title'        : _titleCtrl.text.trim(),
+        'description'  : _descCtrl.text.trim(),
+        'status'       : 'new',
+        'priority'     : _priority,
+        'user_id'      : userId,
+        'category'     : _category,
+        'address'      : _addrCtrl.text.trim(),
+        'created_at'   : DateTime.now().toIso8601String(),
+      };
+
+      // Цена (опционально)
+      final priceText = _priceCtrl.text.trim();
+      if (priceText.isNotEmpty) {
+        data['price'] = double.tryParse(priceText) ?? 0;
+      }
+
+      // Прикрепляем мастера, если пришли со страницы мастера
+      if (widget.masterId.isNotEmpty) {
+        data['master_id'] = widget.masterId;
+        data['status']    = 'in_progress'; // сразу принял
+      }
+
+      // Квартира из профиля
+      if (_userApartment != null && _userApartment!.isNotEmpty) {
+        data['apartment'] = _userApartment;
+      }
+
+      if (imageUrl != null) data['image_url'] = imageUrl;
+
+      await _supabase.from('tasks').insert(data);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(appLanguage.value == 'ru'
+              ? 'Заявка создана!'
+              : 'Өтінім жасалды!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ));
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const OrdersPage()),
+          (r) => r.isFirst,
+        );
+      }
+    } catch (e) {
+      setState(() => _errorMsg = 'Ошибка: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ── BUILD ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Слушаем изменение языка
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
+    final cardBg  = isDark ? const Color(0xFF1A1A1C) : Colors.white;
+
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
-      builder: (context, lang, child) {
+      builder: (context, lang, _) {
         return Scaffold(
           backgroundColor: bgColor,
           appBar: AppBar(
-            backgroundColor: bgColor,
+            backgroundColor: cardBg,
             elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-              onPressed: () => Navigator.pop(context),
-            ),
             title: Text(
-              lang == 'ru' ? "Новая заявка" : "Жаңа өтінім", 
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
+              lang == 'ru' ? 'Новая заявка' : 'Жаңа өтінім',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
             ),
             centerTitle: true,
+            iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
           ),
-          body: Stack(
-            children: [
-              GestureDetector(
-                onTap: () => FocusScope.of(context).unfocus(),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 1. ЗАГРУЗКА ФОТО
-                      _buildImagePickerSection(lang),
-                      
-                      const SizedBox(height: 25),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
 
-                      // 2. АДРЕС И КОНТАКТЫ
-                      _buildSectionTitle(lang == 'ru' ? "Местоположение" : "Орналасқан жері"),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white.withOpacity(0.05)),
-                        ),
-                        child: Column(
-                          children: [
-                            _buildModernField(_addressController, lang == 'ru' ? "Адрес" : "Мекен-жай", LucideIcons.mapPin),
-                            const Divider(color: Colors.white10, height: 20),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildModernField(
-                                    _apartmentController, 
-                                    "Кв. №", 
-                                    LucideIcons.home, 
-                                    keyboard: TextInputType.number
-                                  )
-                                ),
-                                Container(width: 1, height: 30, color: Colors.white10, margin: const EdgeInsets.symmetric(horizontal: 10)),
-                                Expanded(
-                                  flex: 2, 
-                                  child: _buildModernField(
-                                    _phoneController, 
-                                    "Телефон", 
-                                    LucideIcons.phone, 
-                                    keyboard: TextInputType.phone, 
-                                    prefix: "+7 "
-                                  )
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                  // Мастер (если пришли с его страницы)
+                  if (widget.masterName.isNotEmpty)
+                    _buildMasterBanner(lang, isDark, cardBg),
+
+                  // YOLO-заметка (если пришли из сканера)
+                  if (widget.prefillDescription.isNotEmpty)
+                    _buildYoloBanner(lang, isDark),
+
+                  const SizedBox(height: 4),
+
+                  // Тип услуги
+                  _sectionLabel(lang == 'ru' ? 'Тип услуги *' : 'Қызмет түрі *', isDark),
+                  const SizedBox(height: 8),
+                  _buildCategoryGrid(lang, isDark, cardBg),
+
+                  const SizedBox(height: 18),
+
+                  // Название
+                  _sectionLabel(lang == 'ru' ? 'Название *' : 'Атауы *', isDark),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    ctrl     : _titleCtrl,
+                    hint     : lang == 'ru' ? 'Кратко опишите проблему' : 'Мәселені қысқаша сипаттаңыз',
+                    icon     : LucideIcons.fileText,
+                    isDark   : isDark,
+                    validator: (v) => (v?.isEmpty ?? true)
+                        ? (lang == 'ru' ? 'Введите название' : 'Атауды енгізіңіз')
+                        : null,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Описание
+                  _sectionLabel(lang == 'ru' ? 'Подробное описание *' : 'Толық сипаттама *', isDark),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    ctrl     : _descCtrl,
+                    hint     : lang == 'ru'
+                        ? 'Что случилось? Где? Когда?'
+                        : 'Не болды? Қайда? Қашан?',
+                    icon     : LucideIcons.alignLeft,
+                    isDark   : isDark,
+                    maxLines : 4,
+                    validator: (v) => (v == null || v.trim().length < 10)
+                        ? (lang == 'ru'
+                            ? 'Минимум 10 символов'
+                            : 'Кем дегенде 10 таңба')
+                        : null,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Адрес
+                  _sectionLabel(lang == 'ru' ? 'Адрес' : 'Мекенжай', isDark),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    ctrl    : _addrCtrl,
+                    hint    : lang == 'ru' ? 'Улица, дом' : 'Көше, үй',
+                    icon    : LucideIcons.mapPin,
+                    isDark  : isDark,
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Ожидаемая цена (необязательно)
+                  _sectionLabel(
+                      lang == 'ru' ? 'Ожидаемая стоимость (₸)' : 'Күтілетін құн (₸)',
+                      isDark),
+                  const SizedBox(height: 8),
+                  _buildField(
+                    ctrl    : _priceCtrl,
+                    hint    : lang == 'ru' ? 'Необязательно' : 'Міндетті емес',
+                    icon    : LucideIcons.wallet,
+                    isDark  : isDark,
+                    keyboard: TextInputType.number,
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // Приоритет
+                  _sectionLabel(lang == 'ru' ? 'Срочность' : 'Шұғылдық', isDark),
+                  const SizedBox(height: 8),
+                  _buildPriorityRow(lang, isDark),
+
+                  const SizedBox(height: 18),
+
+                  // Фото
+                  _sectionLabel(lang == 'ru' ? 'Фото неисправности' : 'Ақаулықтың фотосы', isDark),
+                  const SizedBox(height: 8),
+                  _buildPhotoArea(lang, isDark, cardBg),
+
+                  // Ошибка
+                  if (_errorMsg != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
                       ),
-
-                      const SizedBox(height: 25),
-
-                      // 3. ОПИСАНИЕ ПРОБЛЕМЫ
-                      _buildSectionTitle(lang == 'ru' ? "Детали проблемы" : "Мәселе мәліметтері"),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: cardColor,
-                          borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: Colors.white.withOpacity(0.05)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildModernField(_titleController, lang == 'ru' ? "Что случилось?" : "Не болды?", LucideIcons.type),
-                            const Divider(color: Colors.white10, height: 20),
-                            _buildModernField(
-                              _descController, 
-                              lang == 'ru' ? "Опишите подробности..." : "Толығырақ сипаттаңыз...", 
-                              LucideIcons.pencil, 
-                              maxLines: 5
-                            ),
-                            const SizedBox(height: 15),
-                            
-                            // Кнопка ИИ
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: _buildAIButton(lang),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 25),
-
-                      // 4. ПРИОРИТЕТ
-                      _buildSectionTitle(lang == 'ru' ? "Приоритет" : "Приоритет"),
-                      const SizedBox(height: 12),
-                      Row(
+                      child: Row(
                         children: [
-                          _priorityTile('low', lang == 'ru' ? "Низкий" : "Төмен", Colors.blueGrey),
-                          const SizedBox(width: 10),
-                          _priorityTile('medium', lang == 'ru' ? "Средний" : "Орташа", Colors.orange),
-                          const SizedBox(width: 10),
-                          _priorityTile('high', lang == 'ru' ? "Высокий" : "Жоғары", Colors.redAccent),
+                          const Icon(LucideIcons.alertCircle,
+                              color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(_errorMsg!,
+                                style: const TextStyle(
+                                    color: Colors.redAccent, fontSize: 13)),
+                          ),
                         ],
                       ),
+                    ),
+                  ],
 
-                      const SizedBox(height: 40),
+                  const SizedBox(height: 24),
 
-                      // 5. КНОПКА ОТПРАВКИ
-                      _buildSubmitButton(lang),
-                      
-                      const SizedBox(height: 50),
-                    ],
+                  // Кнопка отправки
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(LucideIcons.send,
+                          color: Colors.white, size: 18),
+                      label: Text(
+                        lang == 'ru' ? 'Отправить заявку' : 'Өтінімді жіберу',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        elevation: 0,
+                      ),
+                      onPressed: _isLoading ? null : _submit,
+                    ),
                   ),
-                ),
+
+                  const SizedBox(height: 32),
+                ],
               ),
-              
-              // Индикатор общего сохранения
-              if (_isSaving)
-                Container(
-                  color: Colors.black54,
-                  child: const Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
-                ),
-            ],
+            ),
           ),
         );
       },
     );
   }
 
-  // --- ВИДЖЕТЫ-ПОМОЩНИКИ ---
+  // ── ВИДЖЕТЫ ──────────────────────────────────────────────
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8.0),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+  Widget _buildMasterBanner(String lang, bool isDark, Color cardBg) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blueAccent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(LucideIcons.userCheck,
+              color: Colors.blueAccent, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${lang == 'ru' ? 'Мастер' : 'Шебер'}: ${widget.masterName}',
+              style: const TextStyle(
+                  color: Colors.blueAccent, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildImagePickerSection(String lang) {
-    return GestureDetector(
-      onTap: () async {
-        final img = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-        if (img != null) setState(() => _selectedImage = img);
-      },
-      child: Container(
-        height: 180,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: accentBlue.withOpacity(0.2), width: 1),
-          image: _selectedImage != null
-              ? DecorationImage(
-                  image: kIsWeb ? NetworkImage(_selectedImage!.path) : FileImage(File(_selectedImage!.path)) as ImageProvider,
-                  fit: BoxFit.cover)
-              : null,
-        ),
-        child: _selectedImage == null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildYoloBanner(String lang, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.purple.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.purple.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.remove_red_eye_outlined,
+              color: Colors.purple, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              lang == 'ru'
+                  ? 'Данные заполнены автоматически из сканера'
+                  : 'Деректер сканерден автоматты толтырылды',
+              style: const TextStyle(color: Colors.purple, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryGrid(String lang, bool isDark, Color cardBg) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _categories.entries.map((e) {
+        final isSelected = _category == e.key;
+        final label = lang == 'ru'
+            ? e.value['ru'] as String
+            : e.value['kz'] as String;
+        final icon = e.value['icon'] as IconData;
+        return GestureDetector(
+          onTap: () => setState(() => _category = e.key),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? Colors.blueAccent
+                  : (isDark ? const Color(0xFF1A1A1C) : Colors.white),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? Colors.blueAccent
+                    : (isDark
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.grey.shade200),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon,
+                    size: 15,
+                    color: isSelected ? Colors.white : Colors.blueAccent),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected
+                        ? Colors.white
+                        : (isDark ? Colors.white70 : Colors.black87),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildPriorityRow(String lang, bool isDark) {
+    final priorities = {
+      'low'   : {'ru': 'Низкая', 'kz': 'Төмен', 'color': Colors.green},
+      'medium': {'ru': 'Средняя','kz': 'Орташа', 'color': Colors.orange},
+      'high'  : {'ru': 'Высокая','kz': 'Жоғары', 'color': Colors.red},
+    };
+    return Row(
+      children: priorities.entries.map((e) {
+        final isSelected = _priority == e.key;
+        final label = lang == 'ru'
+            ? e.value['ru'] as String
+            : e.value['kz'] as String;
+        final color = e.value['color'] as Color;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () => setState(() => _priority = e.key),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? color.withOpacity(0.15)
+                    : (isDark ? const Color(0xFF1A1A1C) : Colors.white),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? color : Colors.grey.withOpacity(0.2),
+                  width: isSelected ? 1.5 : 1,
+                ),
+              ),
+              child: Column(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(15),
-                    decoration: BoxDecoration(color: accentBlue.withOpacity(0.1), shape: BoxShape.circle),
-                    child: Icon(LucideIcons.imagePlus, color: accentBlue, size: 32),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(lang == 'ru' ? "Прикрепить фото" : "Суреттіแนบ", 
-                    style: TextStyle(color: Colors.white.withOpacity(0.5), fontWeight: FontWeight.w500)),
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                          color: color, shape: BoxShape.circle)),
+                  const SizedBox(height: 4),
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected
+                              ? color
+                              : (isDark ? Colors.white54 : Colors.black45))),
                 ],
-              )
-            : Stack(
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildPhotoArea(String lang, bool isDark, Color cardBg) {
+    return GestureDetector(
+      onTap: _pickPhoto,
+      child: Container(
+        height: _photoFile != null ? 180 : 100,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withOpacity(0.1)
+                : Colors.grey.shade200,
+            style: BorderStyle.solid,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: _photoFile != null
+            ? Stack(
+                fit: StackFit.expand,
                 children: [
+                  Image.file(_photoFile!, fit: BoxFit.cover),
                   Positioned(
-                    right: 10,
-                    top: 10,
+                    top: 8, right: 8,
                     child: GestureDetector(
-                      onTap: () => setState(() => _selectedImage = null),
+                      onTap: () => setState(() => _photoFile = null),
                       child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                        child: const Icon(Icons.close, color: Colors.white, size: 20),
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(LucideIcons.x,
+                            color: Colors.white, size: 14),
                       ),
                     ),
                   ),
                 ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(LucideIcons.camera,
+                      size: 28,
+                      color: isDark ? Colors.white38 : Colors.black26),
+                  const SizedBox(height: 8),
+                  Text(
+                    lang == 'ru'
+                        ? 'Нажмите чтобы добавить фото'
+                        : 'Фото қосу үшін басыңыз',
+                    style: const TextStyle(
+                        color: Colors.grey, fontSize: 13),
+                  ),
+                ],
               ),
       ),
     );
   }
 
-  Widget _buildAIButton(String lang) {
-    return InkWell(
-      onTap: _isAILoading ? null : () => _analyzeWithAI(lang),
-      borderRadius: BorderRadius.circular(15),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: _isAILoading 
-              ? [Colors.grey, Colors.grey] 
-              : [const Color(0xFF6A11CB), const Color(0xFF2575FC)],
-          ),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            if (!_isAILoading) BoxShadow(color: Colors.blue.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
-          ],
-        ),
-        child: _isAILoading 
-          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-          : const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.sparkles, color: Colors.white, size: 16),
-                SizedBox(width: 8),
-                Text(
-                  "AI ASSISTANT", 
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)
-                ),
-              ],
-            ),
-      ),
-    );
-  }
-
-  Widget _buildModernField(TextEditingController controller, String hint, IconData icon, {int maxLines = 1, TextInputType? keyboard, String? prefix}) {
-    return TextField(
-      controller: controller,
+  Widget _buildField({
+    required TextEditingController ctrl,
+    required String hint,
+    required IconData icon,
+    required bool isDark,
+    int maxLines = 1,
+    TextInputType keyboard = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: ctrl,
       maxLines: maxLines,
       keyboardType: keyboard,
-      style: const TextStyle(color: Colors.white, fontSize: 16),
-      cursorColor: accentBlue,
+      validator: validator,
+      style: TextStyle(
+          color: isDark ? Colors.white : Colors.black87, fontSize: 14),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: Colors.white.withOpacity(0.2), fontSize: 15),
-        prefixIcon: Icon(icon, color: accentBlue.withOpacity(0.7), size: 20),
-        prefixText: prefix,
-        prefixStyle: const TextStyle(color: Colors.white, fontSize: 16),
-        border: InputBorder.none,
-        contentPadding: const EdgeInsets.symmetric(vertical: 15),
-      ),
-    );
-  }
-
-  Widget _priorityTile(String value, String label, Color color) {
-    bool isSelected = _selectedPriority == value;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedPriority = value),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: isSelected ? color.withOpacity(0.2) : cardColor,
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: isSelected ? color : Colors.white.withOpacity(0.05), width: 1.5),
-          ),
-          child: Center(
-            child: Text(label, style: TextStyle(
-              color: isSelected ? Colors.white : Colors.white38, 
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, 
-              fontSize: 12)),
-          ),
+        hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+        prefixIcon: maxLines == 1
+            ? Icon(icon, color: Colors.blueAccent, size: 18)
+            : Padding(
+                padding: const EdgeInsets.only(left: 12, top: 12),
+                child: Icon(icon, color: Colors.blueAccent, size: 18),
+              ),
+        prefixIconConstraints: maxLines > 1
+            ? const BoxConstraints(minWidth: 40)
+            : null,
+        filled: true,
+        fillColor: isDark
+            ? Colors.white.withOpacity(0.05)
+            : Colors.grey.shade50,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+              color: isDark
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.grey.shade200),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(
+              color: isDark
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.grey.shade200),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              const BorderSide(color: Colors.blueAccent, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              const BorderSide(color: Colors.redAccent, width: 1),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide:
+              const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
+        errorStyle:
+            const TextStyle(color: Colors.redAccent, fontSize: 11),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: maxLines > 1 ? 12 : 14,
         ),
       ),
     );
   }
 
-  Widget _buildSubmitButton(String lang) {
-    return SizedBox(
-      width: double.infinity,
-      height: 60,
-      child: ElevatedButton(
-        onPressed: _isSaving ? null : () => _saveOrder(lang),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: accentBlue,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          elevation: 8,
-          shadowColor: accentBlue.withOpacity(0.4),
+  Widget _sectionLabel(String text, bool isDark) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: isDark ? Colors.white60 : Colors.black54,
         ),
-        child: Text(
-          lang == 'ru' ? "ОТПРАВИТЬ ЗАЯВКУ" : "ӨТІНІМДІ ЖІБЕРУ", 
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.1)
-        ),
-      ),
-    );
-  }
+      );
 }

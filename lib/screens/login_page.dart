@@ -115,7 +115,7 @@ class _LoginPageState extends State<LoginPage>
     setState(() { _isGoogleLoading = true; _errorMessage = null; });
 
     try {
-      const webClientId ='700103731510-v907afamoo1v6goub4dih92998g1fg0p.apps.googleusercontent.com';
+      const webClientId ='700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com';
       // ↑ Замени на свой Client ID из Google Cloud Console
       //   (Проект → APIs & Services → Credentials → OAuth 2.0 Web Client)
 
