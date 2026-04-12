@@ -119,7 +119,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const CreateOrderPage(initialCategory: '',)),
+                    MaterialPageRoute(builder: (context) => const CreateOrderPage(initialCategory: '', masterId: null, masterName: null, prefillDescription: '',)),
                   );
                 },
                 backgroundColor: Colors.blueAccent,

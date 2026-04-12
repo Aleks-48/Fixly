@@ -14,7 +14,7 @@ class CallScreen extends StatefulWidget {
     required this.taskId,
     required this.hasVideo,
     required this.userName,
-    required this.avatarUrl,
+    required this.avatarUrl, required String remoteUserId, required String remoteUserName, required String taskTitle, required bool isIncoming,
   });
 
   @override

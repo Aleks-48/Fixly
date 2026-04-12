@@ -163,7 +163,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                         borderRadius: BorderRadius.circular(12)
                       ),
                       child: Text(
-                        "${lang == 'ru' ? 'Кв' : 'Пәт'}. ${widget.task.apartment.isEmpty ? '-' : widget.task.apartment}", 
+                        "${lang == 'ru' ? 'Кв' : 'Пәт'}. ${widget.task.apartment!.isEmpty ? '-' : widget.task.apartment}", 
                         style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 18)
                       ),
                     ),

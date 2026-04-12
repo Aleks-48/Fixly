@@ -23,7 +23,7 @@ class ProfileService {
         email: user.email ?? '',
         phone: data['phone'] ?? '',
         bin: data['bin']?.toString() ?? '',
-        role: data['role'] ?? 'master',
+        role: data['role'] ?? 'master', fullName: '',
       );
     } catch (e) {
       print('Ошибка fetchUserProfile: $e');
@@ -106,7 +106,7 @@ class ProfileService {
         'first_name': user.firstName,
         'last_name': user.lastName,
         'name': fullName,
-        'bin': user.bin,
+        'bin': user.id,
         'role': user.role,
         'email': user.email,
         'updated_at': DateTime.now().toIso8601String(),

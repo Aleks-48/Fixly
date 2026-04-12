@@ -1,4 +1,4 @@
-package com.example.fixly_app
+package com.aleks48.fixlyapp
 
 import io.flutter.embedding.android.FlutterActivity
 

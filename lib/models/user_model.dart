@@ -1,75 +1,90 @@
+// lib/models/user_model.dart
 class UserModel {
-  final String id;
-  final String firstName; // Разделили Имя
-  final String lastName;  // и Фамилию
-  final String email;
-  final String phone;
+  final String  id;
+  final String  fullName;
+  final String  role;        // resident | master | chairman
+  final String? email;
+  final String? phone;
   final String? avatarUrl;
-  final String bin; 
-  final String role; // 'master' (ИП/ТОО) или 'osi' (Председатель)
-  final String? orgName; // Название компании или ЖК
+  final String? buildingId;
+  final String? specialty;       // только для мастеров
+  final String? description;     // только для мастеров
+  final double? priceFrom;
+  final int?    experienceYears;
+  final double  rating;
+  final int     reviewsCount;
+  final bool    isVerified;
+  final bool    isAvailable;     // онлайн/офлайн (для мастеров)
+  final int?    apartmentNumber; // только для жителей
 
-  UserModel({
+  const UserModel({
     required this.id,
-    required this.firstName,
-    required this.lastName,
-    required this.email,
-    required this.phone,
-    this.avatarUrl,
-    required this.bin,
+    required this.fullName,
     required this.role,
-    this.orgName,
+    this.email,
+    this.phone,
+    this.avatarUrl,
+    this.buildingId,
+    this.specialty,
+    this.description,
+    this.priceFrom,
+    this.experienceYears,
+    this.rating = 0.0,
+    this.reviewsCount = 0,
+    this.isVerified = false,
+    this.isAvailable = true,
+    this.apartmentNumber, required firstName, required lastName, required String bin,
   });
 
-  // Геттер для удобного отображения полного имени
-  String get fullName => '$firstName $lastName';
-
-  UserModel copyWith({
-    String? firstName,
-    String? lastName,
-    String? bin,
-    String? avatarUrl,
-    String? role,
-    String? orgName,
-  }) {
+  factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
-      id: id,
-      email: email,
-      phone: phone,
-      firstName: firstName ?? this.firstName,
-      lastName: lastName ?? this.lastName,
-      bin: bin ?? this.bin,
-      avatarUrl: avatarUrl ?? this.avatarUrl,
-      role: role ?? this.role,
-      orgName: orgName ?? this.orgName,
+      id              : map['id']?.toString()          ?? '',
+      fullName        : (map['full_name'] ?? map['name'])?.toString() ?? '',
+      role            : map['role']?.toString()         ?? 'resident',
+      email           : map['email']?.toString(),
+      phone           : map['phone']?.toString(),
+      avatarUrl       : map['avatar_url']?.toString(),
+      buildingId      : map['building_id']?.toString(),
+      specialty       : map['specialty']?.toString(),
+      description     : (map['description'] ?? map['bio'])?.toString(),
+      priceFrom       : (map['price_from'] as num?)?.toDouble(),
+      experienceYears : map['experience_years'] as int?,
+      rating          : (map['rating'] as num?)?.toDouble()       ?? 0.0,
+      reviewsCount    : (map['reviews_count'] as int?)            ?? 0,
+      isVerified      : map['is_verified'] as bool?               ?? false,
+      isAvailable     : map['is_available'] as bool?              ?? true,
+      apartmentNumber : map['apartment_number'] as int?, firstName: null, lastName: null, bin: '',
     );
   }
 
-  factory UserModel.fromJson(Map<String, dynamic> json) {
-    return UserModel(
-      id: json['id'] ?? '',
-      firstName: json['first_name'] ?? '',
-      lastName: json['last_name'] ?? '',
-      email: json['email'] ?? '',
-      phone: json['phone'] ?? '',
-      avatarUrl: json['avatar_url'],
-      bin: json['bin']?.toString() ?? '',
-      role: json['role'] ?? 'osi', // По умолчанию ОСИ, если не указано
-      orgName: json['org_name'],
-    );
+  Map<String, dynamic> toMap() => {
+    'full_name'        : fullName,
+    'role'             : role,
+    if (email           != null) 'email'           : email,
+    if (phone           != null) 'phone'           : phone,
+    if (avatarUrl       != null) 'avatar_url'      : avatarUrl,
+    if (buildingId      != null) 'building_id'     : buildingId,
+    if (specialty       != null) 'specialty'       : specialty,
+    if (description     != null) 'description'     : description,
+    if (priceFrom       != null) 'price_from'      : priceFrom,
+    if (experienceYears != null) 'experience_years': experienceYears,
+    'is_available'     : isAvailable,
+    if (apartmentNumber != null) 'apartment_number': apartmentNumber,
+  };
+
+  bool get isResident  => role == 'resident';
+  bool get isMaster    => role == 'master';
+  bool get isChairman  => role == 'chairman';
+
+  // Инициалы для аватара
+  String get initials {
+    final parts = fullName.trim().split(' ');
+    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    if (fullName.isNotEmpty) return fullName[0].toUpperCase();
+    return '?';
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'first_name': firstName,
-      'last_name': lastName,
-      'email': email,
-      'phone': phone,
-      'avatar_url': avatarUrl,
-      'bin': bin,
-      'role': role,
-      'org_name': orgName,
-    };
-  }
+  get firstName => null;
+
+  get lastName => null;
 }

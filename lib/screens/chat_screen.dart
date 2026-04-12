@@ -262,7 +262,7 @@ class _ChatScreenState extends State<ChatScreen> {
           .eq('task_id', widget.taskId)
           .order('created_at', ascending: false),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("Ошибка загрузки чата"));
+        if (snapshot.hasError) return const Center(child: Text("Ошибка загрузки чата"));
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator.adaptive());
 
         final messages = snapshot.data!;
@@ -396,7 +396,7 @@ class _ChatScreenState extends State<ChatScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)]
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)]
       ),
       child: SafeArea(
         child: Row(
@@ -559,7 +559,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _stopLocationTracking() => _locationTimer?.cancel();
 
-  void _openCall(bool video) => Navigator.push(context, MaterialPageRoute(builder: (_) => CallScreen(taskId: widget.taskId, hasVideo: video, userName: widget.receiverName, avatarUrl: '')));
+  void _openCall(bool video) => Navigator.push(context, MaterialPageRoute(builder: (_) => CallScreen(taskId: widget.taskId, hasVideo: video, userName: widget.receiverName, avatarUrl: '', remoteUserId: '', remoteUserName: '', taskTitle: '', isIncoming: false,)));
 
   void _showSnackBar(String text, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text), backgroundColor: color, behavior: SnackBarBehavior.floating));

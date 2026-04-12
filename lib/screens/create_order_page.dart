@@ -14,7 +14,7 @@ class CreateOrderPage extends StatefulWidget {
 
   const CreateOrderPage({
     super.key, 
-    required this.initialCategory,
+    required this.initialCategory, required masterId, required masterName, required String prefillDescription,
   });
 
   @override

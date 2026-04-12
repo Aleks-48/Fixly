@@ -9,6 +9,8 @@ class SoundService {
   static const String notificationSound = 'sounds/dragon-studio-new-notification-3-398649.mp3';
   static const String callRingSound = 'sounds/11325622-atmosphere-sound-effect-239969.mp3';
 
+  static get instance => null;
+
   // Воспроизведение звука клика
   static Future<void> playClick() async {
     await _player.stop();
@@ -32,4 +34,8 @@ class SoundService {
   static Future<void> stopRinging() async {
     await _ringPlayer.stop();
   }
+
+  static void stopRingtone() {}
+
+  static void playRingtone() {}
 }

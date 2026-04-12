@@ -3,6 +3,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/main.dart'; 
 import 'package:fixly_app/screens/create_order_page.dart';
+import 'package:fixly_app/screens/announcements_screen.dart'; // Не забудь создать этот файл
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -14,8 +15,8 @@ class ResidentHomePage extends StatefulWidget {
 class _ResidentHomePageState extends State<ResidentHomePage> {
   final supabase = Supabase.instance.client;
   bool _isLoading = true;
-  String? _buildingId;
-  String? _buildingName;
+  String? _buildingId; 
+  String? _buildingAddress;
 
   @override
   void initState() {
@@ -23,24 +24,29 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     _getResidentBuilding();
   }
 
-  /// Получаем ID дома и его название из профиля жителя
   Future<void> _getResidentBuilding() async {
     try {
       final user = supabase.auth.currentUser;
       if (user != null) {
-        // Запрос профиля с подгрузкой данных о доме
         final data = await supabase
             .from('profiles')
-            .select('building_id, buildings(name)')
+            .select('building_id, buildings(address)')
             .eq('id', user.id)
             .maybeSingle();
         
-        if (mounted && data != null) {
-          setState(() {
-            _buildingId = data['building_id']?.toString();
-            _buildingName = data['buildings']?['name']?.toString();
-            _isLoading = false;
-          });
+        if (mounted) {
+          if (data != null && data['building_id'] != null) {
+            setState(() {
+              _buildingId = data['building_id']?.toString();
+              _buildingAddress = data['buildings']?['address']?.toString();
+              _isLoading = false;
+            });
+          } else {
+            setState(() {
+              _buildingId = null;
+              _isLoading = false;
+            });
+          }
         }
       }
     } catch (e) {
@@ -73,29 +79,24 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     color: isDark ? Colors.white : Colors.black,
                   ),
                 ),
-                if (_buildingName != null)
+                if (_buildingAddress != null)
                   Text(
-                    _buildingName!,
+                    _buildingAddress!,
                     style: const TextStyle(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w500),
                   ),
               ],
             ),
             actions: [
-              Stack(
-                children: [
-                  IconButton(
-                    onPressed: () {},
-                    icon: Icon(LucideIcons.bell, color: isDark ? Colors.white : Colors.black87),
-                  ),
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: Container(
-                      width: 8, height: 8,
-                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                    ),
-                  )
-                ],
+              IconButton(
+                onPressed: () {
+                  if (_buildingId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => AnnouncementsScreen(buildingId: _buildingId!)),
+                    );
+                  }
+                },
+                icon: Icon(LucideIcons.megaphone, color: isDark ? Colors.white : Colors.black87),
               ),
               const SizedBox(width: 8),
             ],
@@ -111,30 +112,32 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 1. Блок быстрой подачи заявки
                         _buildQuickAction(isDark, lang),
-                        
                         const SizedBox(height: 32),
-
-                        // 2. Заголовок ленты объявлений
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              lang == 'ru' ? "Объявления ОСИ" : "ОСИ хабарландырулары",
+                              lang == 'ru' ? "Последние новости" : "Соңғы жаңалықтар",
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                             ),
-                            TextButton(
-                              onPressed: () {}, 
-                              child: Text(lang == 'ru' ? "Все" : "Барлығы", style: const TextStyle(color: Colors.blueAccent))
-                            ),
+                            if (_buildingId != null)
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (context) => AnnouncementsScreen(buildingId: _buildingId!)),
+                                  );
+                                }, 
+                                child: Text(
+                                  lang == 'ru' ? "Все" : "Барлығы", 
+                                  style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)
+                                )
+                              ),
                           ],
                         ),
                         const SizedBox(height: 8),
-
-                        // 3. Список объявлений (Работает через Stream)
                         _buildAnnouncementsList(isDark, lang),
-                        
                         const SizedBox(height: 120),
                       ],
                     ),
@@ -187,7 +190,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const CreateOrderPage(initialCategory: '')),
+                  MaterialPageRoute(builder: (context) => const CreateOrderPage(initialCategory: '', masterId: null, masterName: null, prefillDescription: '',)),
                 );
               },
               style: ElevatedButton.styleFrom(
@@ -209,97 +212,91 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Widget _buildAnnouncementsList(bool isDark, String lang) {
-    // Если у пользователя нет привязанного дома в профиле
     if (_buildingId == null) {
       return _buildEmptyState(lang, isDark, true);
     }
 
-    // Стрим для получения объявлений в реальном времени
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('announcements')
           .stream(primaryKey: ['id'])
-          .eq('building_id', _buildingId!) // Фильтр по дому
+          .eq('building_id', _buildingId!) 
           .order('created_at', ascending: false),
       builder: (context, snapshot) {
+        if (snapshot.hasError) return const SizedBox();
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: Padding(
-            padding: EdgeInsets.all(40.0),
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ));
+          return const Center(child: CircularProgressIndicator(strokeWidth: 2));
         }
 
-        if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return _buildEmptyState(lang, isDark, false);
-        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) return _buildEmptyState(lang, isDark, false);
 
-        final items = snapshot.data!;
+        // Ограничиваем только 2 объявлениями на главном экране
+        final displayItems = items.take(2).toList();
 
         return ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length > 5 ? 5 : items.length, // Показываем последние 5
+          itemCount: displayItems.length,
           separatorBuilder: (_, __) => const SizedBox(height: 12),
           itemBuilder: (context, index) {
-            final item = items[index];
-            final DateTime date = DateTime.parse(item['created_at'] ?? DateTime.now().toString());
-            final String formattedDate = "${date.day}.${date.month}.${date.year}";
-
-            return InkWell(
-              onTap: () => _showAnnouncementDetails(context, item, isDark, lang),
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            formattedDate,
-                            style: const TextStyle(color: Colors.blueAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const Spacer(),
-                        const Icon(LucideIcons.megaphone, size: 16, color: Colors.grey),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      item['title'] ?? '',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      item['content'] ?? '',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: isDark ? Colors.grey[400] : Colors.black54,
-                        fontSize: 14,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
+            final item = displayItems[index];
+            return _buildAnnouncementCard(item, isDark, lang);
           },
         );
       },
+    );
+  }
+
+  Widget _buildAnnouncementCard(Map<String, dynamic> item, bool isDark, String lang) {
+    DateTime date = DateTime.parse(item['created_at'] ?? DateTime.now().toString());
+    final String formattedDate = "${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}";
+
+    return InkWell(
+      onTap: () => _showAnnouncementDetails(context, item, isDark, lang),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.blueAccent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    formattedDate,
+                    style: const TextStyle(color: Colors.blueAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const Spacer(),
+                const Icon(LucideIcons.megaphone, size: 16, color: Colors.blueAccent),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              item['title'] ?? '',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              item['content'] ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: isDark ? Colors.grey[400] : Colors.black54, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -318,51 +315,18 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40, height: 5,
-                decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10)),
-              ),
-            ),
+            Center(child: Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.grey[600], borderRadius: BorderRadius.circular(10)))),
             const SizedBox(height: 28),
-            Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: Colors.blueAccent,
-                  child: Icon(LucideIcons.megaphone, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    item['title'] ?? '',
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
+            Text(item['title'] ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 20),
-            Text(
-              item['content'] ?? '',
-              style: TextStyle(
-                fontSize: 16, 
-                height: 1.6, 
-                color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87
-              ),
-            ),
+            Text(item['content'] ?? '', style: TextStyle(fontSize: 16, height: 1.6, color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87)),
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
-              child: TextButton(
+              child: ElevatedButton(
                 onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.blueAccent.withOpacity(0.1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                child: Text(
-                  lang == 'ru' ? "Закрыть" : "Жабу", 
-                  style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.symmetric(vertical: 16)),
+                child: Text(lang == 'ru' ? "Понятно" : "Түсінікті"),
               ),
             ),
           ],
@@ -381,23 +345,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       ),
       child: Column(
         children: [
-          Icon(LucideIcons.layoutList, color: Colors.grey.withOpacity(0.2), size: 64),
+          Icon(noBuilding ? LucideIcons.mapPin : LucideIcons.layoutList, color: Colors.blueAccent.withOpacity(0.2), size: 64),
           const SizedBox(height: 20),
-          Text(
-            noBuilding 
-                ? (lang == 'ru' ? "Адрес не привязан" : "Мекен-жай тіркелмеген")
-                : (lang == 'ru' ? "Объявлений пока нет" : "Хабарландырулар жоқ"),
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            lang == 'ru' 
-                ? "Здесь появится важная информация от вашего ОСИ" 
-                : "Мұнда сіздің ОСИ-ден маңызды ақпарат пайда болады",
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.grey, fontSize: 13),
-          ),
+          Text(noBuilding ? (lang == 'ru' ? "Адрес не привязан" : "Мекен-жай тіркелмеген") : (lang == 'ru' ? "Объявлений пока нет" : "Хабарландырулар жоқ"), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         ],
       ),
     );

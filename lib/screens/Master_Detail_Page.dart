@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:fixly_app/screens/ai_chat_screen.dart';
+import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/chat_screen.dart';
+import 'package:fixly_app/screens/create_order_page.dart';
 
 class MasterDetailPage extends StatefulWidget {
   final Map<String, dynamic> masterData;
@@ -14,54 +15,27 @@ class MasterDetailPage extends StatefulWidget {
   State<MasterDetailPage> createState() => _MasterDetailPageState();
 }
 
-class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerProviderStateMixin {
-  final supabase = Supabase.instance.client;
+class _MasterDetailPageState extends State<MasterDetailPage>
+    with SingleTickerProviderStateMixin {
+  final _supabase = Supabase.instance.client;
+
   List<Map<String, dynamic>> _portfolioItems = [];
-  List<Map<String, dynamic>> _reviews = [];
-  bool _isLoading = true;
+  List<Map<String, dynamic>> _reviews        = [];
+  bool   _isLoading      = true;
+  int    _ordersCount    = 0;   // реальное кол-во завершённых заказов
+  double _avgRating      = 0.0; // среднее из отзывов
+  String _experienceText = '';  // из profiles.experience_years
+
   late AnimationController _fadeController;
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
     _fadeController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 600),
     )..forward();
-  }
-
-  Future<void> _loadInitialData() async {
-    await Future.wait([
-      _loadPortfolio(),
-      _loadReviews(),
-    ]);
-    if (mounted) setState(() => _isLoading = false);
-  }
-
-  Future<void> _loadPortfolio() async {
-    try {
-      final data = await supabase
-          .from('portfolio')
-          .select('*')
-          .eq('master_id', widget.masterData['id']);
-      if (mounted) _portfolioItems = List<Map<String, dynamic>>.from(data);
-    } catch (e) {
-      debugPrint("Ошибка загрузки портфолио: $e");
-    }
-  }
-
-  Future<void> _loadReviews() async {
-    try {
-      final data = await supabase
-          .from('reviews')
-          .select('*, profiles(full_name, avatar_url)')
-          .eq('master_id', widget.masterData['id'])
-          .order('created_at', ascending: false);
-      if (mounted) _reviews = List<Map<String, dynamic>>.from(data);
-    } catch (e) {
-      debugPrint("Ошибка загрузки отзывов: $e");
-    }
+    _loadData();
   }
 
   @override
@@ -70,361 +44,528 @@ class _MasterDetailPageState extends State<MasterDetailPage> with SingleTickerPr
     super.dispose();
   }
 
-  void _showCallSimulation(String title, IconData icon, Color color) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: const Color(0xFF1C1C1E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(40))),
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.75,
-        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
-        child: Column(
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 40),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: color.withOpacity(0.5), width: 2)),
-              child: CircleAvatar(
-                radius: 70,
-                backgroundImage: widget.masterData['avatar_url'] != null ? NetworkImage(widget.masterData['avatar_url']) : null,
-                child: widget.masterData['avatar_url'] == null ? const Icon(LucideIcons.user, size: 70) : null,
-              ),
-            ),
-            const SizedBox(height: 30),
-            Text(widget.masterData['name'] ?? "Мастер", style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Text(title, style: TextStyle(color: color, fontSize: 16, letterSpacing: 1.5, fontWeight: FontWeight.w500)),
-            const Spacer(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _callActionButton(LucideIcons.micOff, Colors.white10),
-                const SizedBox(width: 20),
-                _callActionButton(LucideIcons.phoneOff, Colors.redAccent, isEndCall: true),
-                const SizedBox(width: 20),
-                _callActionButton(LucideIcons.videoOff, Colors.white10),
-              ],
-            ),
-            const SizedBox(height: 50),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _callActionButton(IconData icon, Color bg, {bool isEndCall = false}) {
-    return GestureDetector(
-      onTap: () => isEndCall ? Navigator.pop(context) : null,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-        child: Icon(icon, color: Colors.white, size: 28),
-      ),
-    );
-  }
-
-  void _openChat() {
-    final myId = supabase.auth.currentUser?.id;
-    final masterId = widget.masterData['id'].toString();
-    final masterName = widget.masterData['name'] ?? "Мастер";
-    if (myId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Пожалуйста, войдите в аккаунт")));
+  // ── ЗАГРУЗКА ДАННЫХ ────────────────────────────────────────
+  Future<void> _loadData() async {
+    final masterId = widget.masterData['id']?.toString() ?? '';
+    if (masterId.isEmpty) {
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
-    final String generatedChatId = "chat_${myId.substring(0, 8)}_${masterId.substring(0, 8)}";
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(
-          taskId: generatedChatId,
-          taskTitle: "Чат с мастером",
-          receiverId: masterId,
-          receiverName: masterName,
-        ),
-      ),
-    );
+
+    try {
+      final results = await Future.wait([
+        // Портфолио
+        _supabase
+            .from('portfolio')
+            .select('image_url, title, description')
+            .eq('master_id', masterId)
+            .limit(10),
+        // Отзывы — сначала новые
+        _supabase
+            .from('reviews')
+            .select('rating, comment, created_at, profiles(full_name, avatar_url)')
+            .eq('master_id', masterId)
+            .order('created_at', ascending: false)
+            .limit(20),
+        // Количество завершённых заказов
+        _supabase
+            .from('tasks')
+            .select('id')
+            .eq('master_id', masterId)
+            .eq('status', 'completed'),
+      ]);
+
+      final portfolio = List<Map<String, dynamic>>.from(results[0] as List);
+      final reviews   = List<Map<String, dynamic>>.from(results[1] as List);
+      final orders    = results[2] as List;
+
+      // Среднее рейтинга из реальных отзывов
+      double avgRating = 0;
+      if (reviews.isNotEmpty) {
+        final sum = reviews.fold<double>(
+            0, (acc, r) => acc + ((r['rating'] as num?)?.toDouble() ?? 0));
+        avgRating = sum / reviews.length;
+      } else {
+        // Fallback из профиля
+        avgRating = (widget.masterData['rating'] as num?)?.toDouble() ?? 5.0;
+      }
+
+      // Опыт
+      final expYears = widget.masterData['experience_years'] as int?;
+      final lang = appLanguage.value;
+      String expText = expYears != null
+          ? '$expYears ${lang == 'ru' ? 'лет' : 'жыл'}'
+          : (lang == 'ru' ? 'Новый' : 'Жаңа');
+
+      if (mounted) {
+        setState(() {
+          _portfolioItems = portfolio;
+          _reviews        = reviews;
+          _ordersCount    = orders.length;
+          _avgRating      = avgRating;
+          _experienceText = expText;
+          _isLoading      = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('MasterDetailPage load error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
+  Future<void> _makePhoneCall(String? phone) async {
+    if (phone == null || phone.isEmpty) return;
+    final uri = Uri(
+        scheme: 'tel', path: phone.replaceAll(RegExp(r'[^0-9+]'), ''));
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
+  // ── BUILD ──────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    const Color bgBlack = Color(0xFF0F0F10);
-    const Color cardGrey = Color(0xFF1C1C1E);
-    const Color accentBlue = Color(0xFF3B82F6);
+    final isDark    = Theme.of(context).brightness == Brightness.dark;
+    final accentColor = const Color(0xFF4361EE);
+    final bgColor   = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
 
-    final String name = widget.masterData['name'] ?? "Мастер";
-    final String spec = widget.masterData['specialization'] ?? "Специалист";
-    final double rating = (widget.masterData['avg_rating'] ?? 0.0).toDouble();
-
-    return Scaffold(
-      backgroundColor: bgBlack,
-      body: FadeTransition(
-        opacity: _fadeController,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverAppBar(
-              expandedHeight: 280,
-              pinned: true,
-              stretch: true,
-              backgroundColor: bgBlack,
-              leading: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: CircleAvatar(
-                  backgroundColor: Colors.black38,
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-              ),
-              flexibleSpace: FlexibleSpaceBar(
-                stretchModes: const [StretchMode.zoomBackground],
-                background: Stack(
-                  fit: StackFit.expand,
+    return ValueListenableBuilder<String>(
+      valueListenable: appLanguage,
+      builder: (context, lang, _) {
+        return Scaffold(
+          backgroundColor: bgColor,
+          body: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Stack(
                   children: [
-                    Container(
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xFF2563EB), bgBlack]),
-                      ),
-                    ),
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 40),
-                        Hero(
-                          tag: widget.masterData['id'] ?? 'avatar',
-                          child: Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, spreadRadius: 5)],
-                            ),
-                            child: CircleAvatar(
-                              radius: 60,
-                              backgroundColor: cardGrey,
-                              backgroundImage: widget.masterData['avatar_url'] != null ? NetworkImage(widget.masterData['avatar_url']) : null,
-                              child: widget.masterData['avatar_url'] == null ? const Icon(LucideIcons.user, size: 55, color: Colors.white24) : null,
+                    CustomScrollView(
+                      slivers: [
+                        _buildAppBar(),
+                        SliverToBoxAdapter(
+                          child: FadeTransition(
+                            opacity: _fadeController,
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildNameRow(lang, isDark),
+                                  const SizedBox(height: 24),
+                                  _buildStatsRow(lang, isDark),
+                                  const SizedBox(height: 24),
+                                  _buildAbout(lang, isDark),
+                                  const SizedBox(height: 24),
+                                  _buildPortfolio(lang),
+                                  const SizedBox(height: 24),
+                                  _buildReviews(lang, isDark),
+                                  const SizedBox(height: 100),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 15),
-                        Text(name, style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
-                        const SizedBox(height: 5),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(color: accentBlue.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
-                          child: Text(spec, style: const TextStyle(color: accentBlue, fontSize: 13, fontWeight: FontWeight.bold)),
-                        ),
                       ],
                     ),
+                    // Кнопка "Заказать" только для жителей
+                    if (userRole.value == 'resident')
+                      _buildBottomAction(accentColor, isDark, lang),
                   ],
                 ),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 25),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildContactAction(LucideIcons.phone, "Аудио", () => _showCallSimulation("Входящий вызов...", LucideIcons.phone, Colors.greenAccent)),
-                        _buildContactAction(LucideIcons.video, "Видео", () => _showCallSimulation("Запуск трансляции...", LucideIcons.video, accentBlue)),
-                        _buildContactAction(LucideIcons.messageSquare, "Чат", _openChat),
-                        _buildContactAction(LucideIcons.sparkles, "AI Помощь", () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AIChatScreen()))),
-                      ],
-                    ),
-                    const SizedBox(height: 35),
-                    _buildStatsRow(rating),
-                    const SizedBox(height: 35),
-                    _buildSectionTitle("О МАСТЕРЕ"),
-                    Text(
-                      widget.masterData['bio'] ?? "Профессиональный мастер с большим опытом работы. Гарантирую качество, соблюдение сроков и чистоту на объекте. Работаю с современными материалами и оборудованием.",
-                      style: const TextStyle(color: Colors.white70, fontSize: 15, height: 1.6),
-                    ),
-                    const SizedBox(height: 35),
-                    _buildSectionTitle("ПОРТФОЛИО"),
-                    _buildPortfolioGrid(accentBlue, cardGrey),
-                    const SizedBox(height: 35),
-                    
-                    // БЛОК ОТЗЫВОВ
-                    _buildSectionTitle("ОТЗЫВЫ"),
-ExpansionTile(
-  title: const Text("Отзывы клиентов", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-  backgroundColor: Colors.transparent, // Убираем лишний фон
-  collapsedBackgroundColor: Colors.transparent,
-  iconColor: Colors.blueAccent, // Цвет стрелочки при открытии
-  collapsedIconColor: Colors.white54, // Цвет стрелочки при закрытии
-  childrenPadding: const EdgeInsets.only(top: 10),
-  children: _reviews.isEmpty 
-    ? [const Padding(padding: EdgeInsets.all(20), child: Text("Пока отзывов нет", style: TextStyle(color: Colors.white30)))]
-    : _reviews.map((review) => _buildReviewItem(
-        review['profiles']?['full_name'] ?? "Клиент", 
-        review['comment'] ?? "", 
-        (review['rating'] ?? 0).toDouble()
-      )).toList(),
-),
-                    const SizedBox(height: 140),
-                  ],
+        );
+      },
+    );
+  }
+
+  // ── APPBAR С ФОТО ──────────────────────────────────────────
+  Widget _buildAppBar() {
+    final avatarUrl = widget.masterData['avatar_url']?.toString();
+    return SliverAppBar(
+      expandedHeight: 280,
+      pinned: true,
+      stretch: true,
+      backgroundColor: Colors.black,
+      flexibleSpace: FlexibleSpaceBar(
+        stretchModes: const [StretchMode.zoomBackground],
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            avatarUrl != null && avatarUrl.isNotEmpty
+                ? Image.network(
+                    avatarUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Container(color: Colors.grey.shade800),
+                  )
+                : Container(color: Colors.grey.shade800,
+                    child: const Icon(LucideIcons.user,
+                        size: 80, color: Colors.white38)),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black87, Colors.transparent],
                 ),
               ),
             ),
           ],
         ),
       ),
-      bottomSheet: _buildBottomAction(accentBlue, bgBlack),
     );
   }
 
-  Widget _buildPortfolioGrid(Color accent, Color card) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator(color: Colors.blueAccent));
-    if (_portfolioItems.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(30),
-        decoration: BoxDecoration(color: card, borderRadius: BorderRadius.circular(20)),
-        child: const Column(children: [Icon(LucideIcons.imageOff, color: Colors.white24, size: 40), SizedBox(height: 10), Text("Портфолио пусто", style: TextStyle(color: Colors.white38))]),
-      );
-    }
-    return GridView.builder(
-      shrinkWrap: true,
-      padding: EdgeInsets.zero,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1),
-      itemCount: _portfolioItems.length,
-      itemBuilder: (context, index) => _buildWorkItem(_portfolioItems[index]['image_url'], _portfolioItems[index]['type'] == 'video'),
-    );
-  }
-
-  Widget _buildContactAction(IconData icon, String label, VoidCallback onTap) {
-    return Column(
+  // ── ИМЯ + КНОПКИ ЗВОНОК/ЧАТ ───────────────────────────────
+  Widget _buildNameRow(String lang, bool isDark) {
+    return Row(
       children: [
-        InkWell(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.05))),
-            child: Icon(icon, color: const Color(0xFF3B82F6), size: 24),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.masterData['full_name']?.toString() ?? 'Мастер',
+                style: const TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                widget.masterData['specialty']?.toString() ??
+                    (lang == 'ru' ? 'Специалист' : 'Маман'),
+                style: TextStyle(
+                    fontSize: 15,
+                    color: isDark ? Colors.white60 : Colors.black54),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 8),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        _iconBtn(
+          LucideIcons.phone,
+          Colors.green,
+          () => _makePhoneCall(
+              widget.masterData['phone']?.toString()),
+        ),
+        const SizedBox(width: 10),
+        _iconBtn(
+          LucideIcons.messageSquare,
+          Colors.blueAccent,
+          () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                receiverId:   widget.masterData['id']?.toString() ?? '',
+                receiverName: widget.masterData['full_name']?.toString() ?? '',
+                taskId:    '',
+                taskTitle: '',
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 
-Widget _buildWorkItem(String url, bool isVideo) {
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(20),
-    child: Image.network(
-      url,
-      fit: BoxFit.cover,
-      // ЭТО РЕШЕНИЕ ПРОБЛЕМЫ:
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: Colors.white10,
-          child: const Center(
-            child: Icon(LucideIcons.imageOff, color: Colors.white24, size: 30),
-          ),
-        );
-      },
-    ),
-  );
-}
+  Widget _iconBtn(IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(50),
+      child: Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
 
-  Widget _buildStatsRow(double rating) {
+  // ── СТАТИСТИКА (РЕАЛЬНАЯ из БД) ────────────────────────────
+  Widget _buildStatsRow(String lang, bool isDark) {
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 22),
-      decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white.withOpacity(0.05))),
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _stat(rating.toString(), "Рейтинг", LucideIcons.star, Colors.orangeAccent),
-          _stat("48", "Работ", LucideIcons.briefcase, Colors.blueAccent),
-          _stat("99%", "Успех", LucideIcons.checkCircle, Colors.greenAccent),
+          _statItem(
+            _avgRating.toStringAsFixed(1),
+            lang == 'ru' ? 'Рейтинг' : 'Рейтинг',
+            LucideIcons.star,
+            Colors.orange,
+          ),
+          _divider(),
+          _statItem(
+            '$_ordersCount',
+            lang == 'ru' ? 'Заказов' : 'Тапсырыс',
+            LucideIcons.checkCircle,
+            Colors.green,
+          ),
+          _divider(),
+          _statItem(
+            _experienceText,
+            lang == 'ru' ? 'Опыт' : 'Тәжірибе',
+            LucideIcons.award,
+            Colors.blueAccent,
+          ),
         ],
       ),
     );
   }
 
-  Widget _stat(String val, String label, IconData icon, Color color) {
+  Widget _divider() => Container(
+        height: 40,
+        width: 0.5,
+        color: Colors.grey.withOpacity(0.3),
+      );
+
+  Widget _statItem(
+      String val, String label, IconData icon, Color color) {
     return Column(
       children: [
         Icon(icon, color: color, size: 20),
-        const SizedBox(height: 10),
-        Text(val, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        const SizedBox(height: 6),
+        Text(val,
+            style: const TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 18)),
+        Text(label,
+            style:
+                const TextStyle(color: Colors.grey, fontSize: 12)),
       ],
     );
   }
 
-Widget _buildReviewItem(String user, String text, double r) {
-  return Container(
-    margin: const EdgeInsets.only(bottom: 12),
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: Colors.white.withOpacity(0.04), // Мягкая прозрачная подложка
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.white.withOpacity(0.05)), // Едва заметная рамка
-    ),
-    child: Column(
+  // ── О МАСТЕРЕ ──────────────────────────────────────────────
+  Widget _buildAbout(String lang, bool isDark) {
+    final bio = widget.masterData['description']?.toString() ??
+        widget.masterData['bio']?.toString() ??
+        (lang == 'ru'
+            ? 'Опытный специалист по ремонту и обслуживанию.'
+            : 'Тәжірибелі жөндеу маманы.');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(
+            lang == 'ru' ? 'О мастере' : 'Маман туралы'),
+        const SizedBox(height: 10),
+        Text(
+          bio,
+          style: TextStyle(
+              color: isDark ? Colors.white70 : Colors.black87,
+              height: 1.6,
+              fontSize: 14),
+        ),
+      ],
+    );
+  }
+
+  // ── ПОРТФОЛИО ──────────────────────────────────────────────
+  Widget _buildPortfolio(String lang) {
+    if (_portfolioItems.isEmpty) return const SizedBox();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(
+            lang == 'ru' ? 'Примеры работ' : 'Жұмыс мысалдары'),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 120,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _portfolioItems.length,
+            itemBuilder: (context, i) {
+              final url = _portfolioItems[i]['image_url']?.toString();
+              return Container(
+                width: 160,
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.grey.shade300,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: url != null && url.isNotEmpty
+                    ? Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            LucideIcons.imageOff,
+                            color: Colors.grey),
+                      )
+                    : const Icon(LucideIcons.image,
+                        color: Colors.grey),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── ОТЗЫВЫ ─────────────────────────────────────────────────
+  Widget _buildReviews(String lang, bool isDark) {
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                const CircleAvatar(
-                  radius: 14, 
-                  backgroundColor: Colors.white12, 
-                  child: Icon(LucideIcons.user, size: 14, color: Colors.white54)
-                ),
-                const SizedBox(width: 8),
-                Text(user, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-              ],
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1), 
-                borderRadius: BorderRadius.circular(8)
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.star, color: Colors.orange, size: 12), 
-                  Text(" $r", style: const TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold))
-                ]
-              ),
+            _sectionTitle(
+                lang == 'ru' ? 'Отзывы' : 'Пікірлер'),
+            Text(
+              '${_reviews.length}',
+              style: const TextStyle(
+                  color: Colors.blueAccent,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16),
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        Text(text, style: const TextStyle(color: Colors.white60, fontSize: 13, height: 1.5)),
+        const SizedBox(height: 12),
+        _reviews.isEmpty
+            ? Text(
+                lang == 'ru'
+                    ? 'Отзывов пока нет'
+                    : 'Пікірлер әлі жоқ',
+                style: const TextStyle(color: Colors.grey),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _reviews.length,
+                itemBuilder: (context, i) =>
+                    _reviewCard(_reviews[i], isDark),
+              ),
       ],
-    ),
-  );
-}
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Text(title, style: const TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 2.0)),
     );
   }
 
-  Widget _buildBottomAction(Color accent, Color bg) {
+  Widget _reviewCard(Map<String, dynamic> rev, bool isDark) {
+    final profile   = (rev['profiles'] as Map<String, dynamic>?) ?? {};
+    final avatarUrl = profile['avatar_url']?.toString();
+    final name      = profile['full_name']?.toString() ?? 'Клиент';
+    final rating    = (rev['rating'] as num?)?.toInt() ?? 5;
+    final comment   = rev['comment']?.toString() ?? '';
+
     return Container(
-      color: bg,
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(backgroundColor: accent, minimumSize: const Size(double.infinity, 64), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
-        onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Запрос отправлен!"))),
-        child: const Text("ЗАКАЗАТЬ УСЛУГУ", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color: Colors.grey.withOpacity(0.15)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.grey.shade300,
+                backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+                    ? NetworkImage(avatarUrl)
+                    : null,
+                onBackgroundImageError:
+                    avatarUrl != null ? (_, __) {} : null,
+                child: avatarUrl == null || avatarUrl.isEmpty
+                    ? Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white))
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold)),
+              ),
+              Row(
+                children: List.generate(
+                  5,
+                  (j) => Icon(
+                    Icons.star,
+                    size: 13,
+                    color: j < rating ? Colors.orange : Colors.grey,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (comment.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              comment,
+              style: TextStyle(
+                  color: isDark ? Colors.white60 : Colors.black54,
+                  fontSize: 13,
+                  height: 1.5),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) => Text(
+        title,
+        style: const TextStyle(
+            fontSize: 18, fontWeight: FontWeight.bold),
+      );
+
+  // ── КНОПКА "ЗАКАЗАТЬ" (только для жителей) ─────────────────
+  Widget _buildBottomAction(
+      Color accent, bool isDark, String lang) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+        decoration: BoxDecoration(
+          color: isDark
+              ? const Color(0xFF0F0F10)
+              : Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 20,
+              offset: const Offset(0, -5),
+            )
+          ],
+        ),
+        child: ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: accent,
+            minimumSize: const Size(double.infinity, 54),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            elevation: 0,
+          ),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CreateOrderPage(
+                masterId:        widget.masterData['id']?.toString() ?? '',
+                masterName:      widget.masterData['full_name']?.toString() ?? '',
+                initialCategory: widget.masterData['specialty']?.toString() ?? '', prefillDescription: '',
+              ),
+            ),
+          ),
+          child: Text(
+            lang == 'ru'
+                ? 'ЗАКАЗАТЬ УСЛУГУ'
+                : 'ҚЫЗМЕТКЕ ТАПСЫРЫС БЕРУ',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              letterSpacing: 1.0,
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -97,16 +97,14 @@ class _MainWrapperState extends State<MainWrapper> {
   void _onPlusButtonPressed() {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Если это ОБЫЧНЫЙ ЖИТЕЛЬ - сразу на создание заявки
     if (_userRole == 'resident') {
       Navigator.push(
         context, 
-        MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: ''))
+        MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId: null, masterName: null, prefillDescription: '',))
       );
       return;
     }
 
-    // Если это ПРЕДСЕДАТЕЛЬ - показываем меню выбора
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
@@ -136,7 +134,7 @@ class _MainWrapperState extends State<MainWrapper> {
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '')));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId: null, masterName: null, prefillDescription: '',)));
                   },
                 ),
                 _buildMenuOption(
@@ -149,8 +147,8 @@ class _MainWrapperState extends State<MainWrapper> {
                     _showAddAnnouncementDialog();
                   },
                 ),
-_buildMenuOption(
-                  icon: LucideIcons.checkSquare, // Исправлено с howToVote на checkSquare
+                _buildMenuOption(
+                  icon: LucideIcons.checkSquare,
                   title: appLanguage.value == 'ru' ? "Голосование (Voting)" : "Дауыс беру",
                   color: Colors.greenAccent,
                   isDark: isDark,
@@ -186,28 +184,38 @@ _buildMenuOption(
   }
 
   // --- ДИАЛОГ СОЗДАНИЯ ОБЪЯВЛЕНИЯ ---
-void _showAddAnnouncementDialog() async {
+  void _showAddAnnouncementDialog() async {
     final TextEditingController titleController = TextEditingController();
     final TextEditingController contentController = TextEditingController();
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // 1. Сначала узнаем building_id самого председателя
+    // Сначала получаем данные о доме председателя
     final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
     final userData = await Supabase.instance.client
         .from('profiles')
         .select('building_id')
-        .eq('id', user!.id)
-        .single();
+        .eq('id', user.id)
+        .maybeSingle();
     
-    final String? myBuildingId = userData['building_id']?.toString();
+    final String? myBuildingId = userData?['building_id']?.toString();
 
-    if (myBuildingId == null) {
+    // Если ID дома нет в базе - выводим ошибку
+    if (myBuildingId == null || myBuildingId.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Ошибка: У вас не привязан дом в профиле!")),
+        SnackBar(
+          content: Text(appLanguage.value == 'ru' 
+            ? "Ошибка: Дом не привязан к профилю. Выберите дом в настройках." 
+            : "Қате: Үй профильге тіркелмеген."),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
 
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -216,26 +224,37 @@ void _showAddAnnouncementDialog() async {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: titleController, decoration: const InputDecoration(hintText: "Заголовок")),
-            TextField(controller: contentController, maxLines: 3, decoration: const InputDecoration(hintText: "Текст")),
+            TextField(
+              controller: titleController, 
+              decoration: InputDecoration(hintText: appLanguage.value == 'ru' ? "Заголовок" : "Тақырып")
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: contentController, 
+              maxLines: 3, 
+              decoration: InputDecoration(hintText: appLanguage.value == 'ru' ? "Текст объявления" : "Мәтін")
+            ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Отмена")),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(appLanguage.value == 'ru' ? "Отмена" : "Бас тарту")),
           ElevatedButton(
             onPressed: () async {
               if (titleController.text.isNotEmpty) {
-                // 2. Добавляем building_id при сохранении
-                await Supabase.instance.client.from('announcements').insert({
-                  'title': titleController.text,
-                  'content': contentController.text,
-                  'author_id': user.id,
-                  'building_id': myBuildingId, // ВАЖНО: привязка к дому
-                });
-                Navigator.pop(context);
+                try {
+                  await Supabase.instance.client.from('announcements').insert({
+                    'title': titleController.text,
+                    'content': contentController.text,
+                    'author_id': user.id,
+                    'building_id': myBuildingId,
+                  });
+                  if (mounted) Navigator.pop(context);
+                } catch (e) {
+                  debugPrint("Ошибка сохранения объявления: $e");
+                }
               }
             },
-            child: const Text("Создать"),
+            child: Text(appLanguage.value == 'ru' ? "Создать" : "Жариялау"),
           ),
         ],
       ),
@@ -243,10 +262,31 @@ void _showAddAnnouncementDialog() async {
   }
 
   // --- ДИАЛОГ СОЗДАНИЯ ГОЛОСОВАНИЯ ---
-  void _showAddProposalDialog() {
+  void _showAddProposalDialog() async {
     final TextEditingController titleController = TextEditingController();
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    // Получаем building_id, чтобы голосование было видно жильцам именно этого дома
+    final userData = await Supabase.instance.client
+        .from('profiles')
+        .select('building_id')
+        .eq('id', user.id)
+        .maybeSingle();
+    
+    final String? myBuildingId = userData?['building_id']?.toString();
+
+    if (myBuildingId == null || myBuildingId.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Ошибка: Невозможно запустить голосование без привязки к дому.")),
+      );
+      return;
+    }
+
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -260,7 +300,7 @@ void _showAddAnnouncementDialog() async {
           controller: titleController,
           style: TextStyle(color: isDark ? Colors.white : Colors.black),
           decoration: InputDecoration(
-            hintText: "Например: Ремонт лифта",
+            hintText: "Например: Ремонт крыши",
             hintStyle: const TextStyle(color: Colors.grey),
             filled: true,
             fillColor: isDark ? Colors.black26 : Colors.grey.shade100,
@@ -273,13 +313,20 @@ void _showAddAnnouncementDialog() async {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             onPressed: () async {
               if (titleController.text.isNotEmpty) {
-                await Supabase.instance.client.from('proposals').insert({
-                  'title': titleController.text,
-                  'author_id': Supabase.instance.client.auth.currentUser?.id,
-                  'is_active': true,
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Голосование запущено!")));
+                try {
+                  await Supabase.instance.client.from('proposals').insert({
+                    'title': titleController.text,
+                    'author_id': user.id,
+                    'building_id': myBuildingId, // ДОБАВЛЕНО: теперь голосование привязано к дому
+                    'is_active': true,
+                  });
+                  if (mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Голосование запущено!")));
+                  }
+                } catch (e) {
+                  debugPrint("Ошибка создания голосования: $e");
+                }
               }
             },
             child: const Text("Запустить", style: TextStyle(color: Colors.white)),
@@ -393,7 +440,7 @@ void _showAddAnnouncementDialog() async {
           bottomNavigationBar: _buildBottomBar(isDark, cleanLang),
           floatingActionButton: (_userRole == 'chairman' || _userRole == 'resident') 
               ? FloatingActionButton(
-                  onPressed: _onPlusButtonPressed, // ВЫЗОВ НОВОЙ ЛОГИКИ
+                  onPressed: _onPlusButtonPressed, 
                   backgroundColor: Colors.blueAccent,
                   shape: const CircleBorder(),
                   child: const Icon(Icons.add, color: Colors.white, size: 28),

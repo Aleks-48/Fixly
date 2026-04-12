@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
-import 'package:fixly_app/utils/app_texts.dart';
+import 'package:fixly_app/models/user_model.dart';
 import 'package:fixly_app/screens/master_Detail_Page.dart';
 
 class MastersListScreen extends StatefulWidget {
@@ -13,179 +13,248 @@ class MastersListScreen extends StatefulWidget {
 }
 
 class _MastersListScreenState extends State<MastersListScreen> {
-  final supabase = Supabase.instance.client;
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = "";
-  String _selectedCategory = "Все";
-  
-  // Категории для фильтрации (соответствуют специализациям в БД)
-  final List<String> _categories = [
-    "Все", "Дворник", "Сантехник", "Электрик", 
-    "Юрист (ОСИ)", "Клининг", "Маляр"
-  ];
+  final _supabase = Supabase.instance.client;
+  final _searchCtrl = TextEditingController();
+  final _scrollCtrl = ScrollController();
 
-  /// Получение списка мастеров с фильтрацией на стороне клиента
-  Future<List<Map<String, dynamic>>> _getMasters() async {
-    try {
-      // Запрашиваем только тех, у кого роль именно 'master'
-      final response = await supabase
-          .from('profiles')
-          .select('*') 
-          .eq('role', 'master')
-          .order('name', ascending: true);
-      
-      List<Map<String, dynamic>> masters = List<Map<String, dynamic>>.from(response);
+  List<UserModel> _masters = [];
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _selectedSpec;
+  int _page = 0;
+  static const _pageSize = 20;
 
-      // Применяем фильтры
-      masters = masters.where((m) {
-        final name = (m['name'] ?? m['full_name'] ?? "").toString();
-        final email = (m['email'] ?? "").toString();
-        final spec = (m['specialization'] ?? "").toString().toLowerCase();
+  // Специализации
+  static const _specs = {
+    'Все': null,
+    'Сантехник': 'plumber',
+    'Электрик': 'electrician',
+    'Отделка': 'painter',
+    'Сварщик': 'welder',
+    'Плотник': 'carpenter',
+    'Замки/двери': 'locksmith',
+  };
+  static const _specsKz = {
+    'Барлығы': null,
+    'Сантехник': 'plumber',
+    'Электрик': 'electrician',
+    'Жөндеу': 'painter',
+    'Дәнекерші': 'welder',
+    'Ұстасы': 'carpenter',
+    'Слесарь': 'locksmith',
+  };
 
-        // 1. Исключаем тестовые аккаунты (например, Андрей)
-        if (name.contains("Андрей") || email == "anovokresenov129@gamil.com") {
-          return false; 
-        }
-
-        // 2. Фильтр по поисковой строке
-        bool matchesSearch = name.toLowerCase().contains(_searchQuery.toLowerCase());
-        
-        // 3. Фильтр по выбранной категории (чипам)
-        bool matchesCategory = _selectedCategory == "Все" || 
-                               spec.contains(_selectedCategory.toLowerCase());
-        
-        return matchesSearch && matchesCategory && name.isNotEmpty;
-      }).toList();
-
-      return masters;
-    } catch (e) {
-      debugPrint("Ошибка получения списка мастеров: $e");
-      return [];
-    }
+  @override
+  void initState() {
+    super.initState();
+    _load(reset: true);
+    _scrollCtrl.addListener(_onScroll);
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
+    _searchCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 200 &&
+        !_isLoadingMore &&
+        _hasMore) {
+      _load();
+    }
+  }
+
+  // ── ЗАГРУЗКА (ИСПРАВЛЕННАЯ ЛОГИКА) ────────────────────────────
+  Future<void> _load({bool reset = false}) async {
+    if (reset) {
+      setState(() {
+        _page = 0;
+        _masters = [];
+        _hasMore = true;
+        _isLoading = true;
+      });
+    } else {
+      if (_isLoadingMore || !_hasMore) return;
+      setState(() => _isLoadingMore = true);
+    }
+
+    try {
+      // 1. Инициализация и выбор полей (используем var для PostgrestFilterBuilder)
+      var query = _supabase
+          .from('profiles')
+          .select('id, full_name, specialty, avatar_url, rating, reviews_count, '
+              'price_from, experience_years, is_verified, is_available, description');
+
+      // 2. Базовые фильтры (обязательные)
+      query = query.eq('role', 'master').eq('is_verified', true);
+
+      // 3. Динамические фильтры (специализация)
+      if (_selectedSpec != null) {
+        query = query.eq('specialty', _selectedSpec!);
+      }
+
+      // 4. Поиск по имени
+      final searchText = _searchCtrl.text.trim();
+      if (searchText.isNotEmpty) {
+        query = query.ilike('full_name', '%$searchText%');
+      }
+
+      // 5. Сортировка и пагинация вызываются прямо перед await
+      final response = await query
+          .order('rating', ascending: false)
+          .range(_page * _pageSize, (_page + 1) * _pageSize - 1);
+      
+      final loaded = (response as List<dynamic>)
+          .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          if (reset) {
+            _masters = loaded;
+          } else {
+            _masters.addAll(loaded);
+          }
+          _hasMore = loaded.length == _pageSize;
+          _page++;
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('MastersListScreen load error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
+    }
+  }
+
+  // ── BUILD ──────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color textColor = isDark ? Colors.white : Colors.black87;
-    final Color bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF2F2F7);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
+    final cardBg = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
-      builder: (context, lang, child) {
+      builder: (context, lang, _) {
+        final specs = lang == 'ru' ? _specs : _specsKz;
+
         return Scaffold(
           backgroundColor: bgColor,
           appBar: AppBar(
-            backgroundColor: Colors.transparent,
+            backgroundColor: cardBg,
             elevation: 0,
-            surfaceTintColor: Colors.transparent,
-            centerTitle: true,
             title: Text(
-              AppTexts.get('masters', lang), 
-              style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 20)
+              lang == 'ru' ? 'Мастера' : 'Шеберлер',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black87),
             ),
+            centerTitle: true,
+            iconTheme: IconThemeData(
+                color: isDark ? Colors.white : Colors.black87),
           ),
           body: Column(
             children: [
-              // Поле поиска
+              // Поиск
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: TextField(
-                  controller: _searchController,
-                  onChanged: (v) => setState(() => _searchQuery = v),
-                  style: TextStyle(color: textColor),
+                  controller: _searchCtrl,
+                  onSubmitted: (_) => _load(reset: true),
+                  style: TextStyle(color: isDark ? Colors.white : Colors.black87),
                   decoration: InputDecoration(
-                    hintText: lang == 'ru' ? "Найти специалиста..." : "Маманды іздеу...",
-                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                    prefixIcon: const Icon(LucideIcons.search, size: 20, color: Color(0xFF3B82F6)),
+                    hintText: lang == 'ru' ? 'Поиск по имени...' : 'Аты бойынша іздеу...',
+                    hintStyle: const TextStyle(color: Colors.grey),
+                    prefixIcon: const Icon(LucideIcons.search, size: 18),
+                    suffixIcon: _searchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(LucideIcons.x, size: 16),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              _load(reset: true);
+                            },
+                          )
+                        : null,
                     filled: true,
-                    fillColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    fillColor: isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade100,
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16), 
-                      borderSide: BorderSide.none
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16), 
-                      borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05))
-                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
               ),
 
-              // Горизонтальный список категорий (Чипы)
+              // Фильтры
               SizedBox(
-                height: 50,
-                child: ListView.builder(
+                height: 40,
+                child: ListView(
                   scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: _categories.length,
-                  itemBuilder: (context, index) {
-                    final category = _categories[index];
-                    final isSelected = _selectedCategory == category;
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: specs.entries.map((entry) {
+                    final isSelected = _selectedSpec == entry.value;
                     return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: ChoiceChip(
-                        label: Text(category),
-                        selected: isSelected,
-                        onSelected: (val) => setState(() => _selectedCategory = category),
-                        selectedColor: const Color(0xFF3B82F6),
-                        backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-                        showCheckmark: false,
-                        labelStyle: TextStyle(
-                          fontSize: 13,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: Text(
+                          entry.key,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: BorderSide(
-                            color: isSelected ? Colors.transparent : (isDark ? Colors.white10 : Colors.grey.shade300)
-                          )
+                        selected: isSelected,
+                        onSelected: (_) {
+                          setState(() => _selectedSpec = entry.value);
+                          _load(reset: true);
+                        },
+                        backgroundColor: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+                        selectedColor: Colors.blueAccent,
+                        checkmarkColor: Colors.white,
+                        side: BorderSide(
+                          color: isSelected ? Colors.blueAccent : Colors.grey.withOpacity(0.3),
                         ),
                       ),
                     );
-                  },
+                  }).toList(),
                 ),
               ),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
-              // Список мастеров
+              // Список
               Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () async => setState(() {}),
-                  color: const Color(0xFF3B82F6),
-                  child: FutureBuilder<List<Map<String, dynamic>>>(
-                    future: _getMasters(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator(color: Color(0xFF3B82F6)));
-                      }
-                      
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return _buildEmptyState(lang, isDark);
-                      }
-
-                      final masters = snapshot.data!;
-
-                      return ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                        itemCount: masters.length,
-                        itemBuilder: (context, index) {
-                          final master = masters[index];
-                          return _buildMasterCard(master, isDark, lang);
-                        },
-                      );
-                    },
-                  ),
-                ),
+                child: _isLoading
+                    ? _buildSkeleton(isDark)
+                    : _masters.isEmpty
+                        ? _buildEmpty(lang)
+                        : RefreshIndicator(
+                            onRefresh: () => _load(reset: true),
+                            child: ListView.builder(
+                              controller: _scrollCtrl,
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                              itemCount: _masters.length + (_isLoadingMore ? 1 : 0),
+                              itemBuilder: (context, i) {
+                                if (i == _masters.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(16),
+                                    child: Center(child: CircularProgressIndicator()),
+                                  );
+                                }
+                                return _buildMasterCard(_masters[i], lang, isDark);
+                              },
+                            ),
+                          ),
               ),
             ],
           ),
@@ -194,130 +263,159 @@ class _MastersListScreenState extends State<MastersListScreen> {
     );
   }
 
-  /// Виджет карточки мастера
-  Widget _buildMasterCard(Map<String, dynamic> master, bool isDark, String lang) {
-    final String displayName = master['name'] ?? master['full_name'] ?? "Мастер";
-    final String orgName = master['company_name'] ?? (lang == 'ru' ? "Частный мастер" : "Жеке шебер");
-    final String specialization = master['specialization'] ?? (lang == 'ru' ? 'Универсал' : 'Әмбебап');
-    final Color textColor = isDark ? Colors.white : Colors.black87;
+  Widget _buildMasterCard(UserModel master, String lang, bool isDark) {
+    final cardColor = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05)),
-        boxShadow: isDark ? [] : [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4)
-          )
-        ],
-      ),
-      child: InkWell(
-        onTap: () => Navigator.push(
-          context, 
-          MaterialPageRoute(builder: (context) => MasterDetailPage(masterData: master))
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MasterDetailPage(masterData: master.toMap()),
         ),
-        borderRadius: BorderRadius.circular(24),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              // Аватарка
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF3B82F6).withOpacity(0.1),
-                  shape: BoxShape.circle,
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.grey.withOpacity(isDark ? 0.12 : 0.15)),
+        ),
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Colors.blueAccent.withOpacity(0.15),
+                  backgroundImage: (master.avatarUrl != null && master.avatarUrl!.isNotEmpty)
+                      ? NetworkImage(master.avatarUrl!)
+                      : null,
+                  child: (master.avatarUrl == null || master.avatarUrl!.isEmpty)
+                      ? Text(master.initials,
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent, fontSize: 16))
+                      : null,
                 ),
-                child: const Icon(LucideIcons.user, size: 30, color: Color(0xFF3B82F6)),
-              ),
-              const SizedBox(width: 16),
-              
-              // Информация
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName, 
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: textColor)
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      orgName, 
-                      style: const TextStyle(color: Colors.grey, fontSize: 13)
-                    ),
-                    const SizedBox(height: 8),
-                    // Тег специализации
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                if (master.isAvailable)
+                  Positioned(
+                    bottom: 1,
+                    right: 1,
+                    child: Container(
+                      width: 12,
+                      height: 12,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF3B82F6).withOpacity(0.1), 
-                        borderRadius: BorderRadius.circular(8)
+                        color: Colors.green,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: cardColor, width: 2),
                       ),
-                      child: Text(
-                        specialization,
-                        style: const TextStyle(
-                          color: Color(0xFF3B82F6), 
-                          fontSize: 11, 
-                          fontWeight: FontWeight.bold
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          master.fullName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Кнопка действия
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF3B82F6),
-                      shape: BoxShape.circle
-                    ),
-                    child: const Icon(LucideIcons.phone, size: 18, color: Colors.white),
+                      if (master.isVerified)
+                        const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    lang == 'ru' ? "Вызвать" : "Шақыру",
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF3B82F6), fontWeight: FontWeight.w600),
+                  const SizedBox(height: 3),
+                  Text(_specLabel(master.specialty, lang),
+                      style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.black54)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.star, size: 14, color: Colors.orange),
+                      const SizedBox(width: 3),
+                      Text(master.rating.toStringAsFixed(1),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      Text(' (${master.reviewsCount})',
+                          style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      if (master.priceFrom != null) ...[
+                        const SizedBox(width: 10),
+                        Text('${lang == 'ru' ? 'от' : 'бастап'} ${master.priceFrom!.toInt()} ₸',
+                            style: const TextStyle(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+                      ],
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+            const Icon(LucideIcons.chevronRight, size: 18, color: Colors.grey),
+          ],
         ),
       ),
     );
   }
 
-  /// Заглушка при отсутствии результатов
-  Widget _buildEmptyState(String lang, bool isDark) {
+  String _specLabel(String? spec, String lang) {
+    const ruMap = {'plumber': 'Сантехник', 'electrician': 'Электрик', 'painter': 'Отделочник', 'welder': 'Сварщик', 'carpenter': 'Плотник', 'locksmith': 'Слесарь'};
+    const kzMap = {'plumber': 'Сантехник', 'electrician': 'Электрик', 'painter': 'Жөндеуші', 'welder': 'Дәнекерші', 'carpenter': 'Ұста', 'locksmith': 'Слесарь'};
+    if (spec == null) return lang == 'ru' ? 'Специалист' : 'Маман';
+    return (lang == 'ru' ? ruMap[spec] : kzMap[spec]) ?? (lang == 'ru' ? 'Специалист' : 'Маман');
+  }
+
+  Widget _buildSkeleton(bool isDark) {
+    final shimColor = isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade200;
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      itemCount: 6,
+      itemBuilder: (_, __) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(radius: 30, backgroundColor: shimColor),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(height: 14, width: 140, color: shimColor, margin: const EdgeInsets.only(bottom: 6)),
+                  Container(height: 12, width: 80, color: shimColor, margin: const EdgeInsets.only(bottom: 6)),
+                  Container(height: 10, width: 100, color: shimColor),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmpty(String lang) {
     return Center(
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            LucideIcons.userX, 
-            size: 64, 
-            color: isDark ? Colors.white10 : Colors.grey.shade300
-          ),
+          Icon(LucideIcons.users, size: 64, color: Colors.grey.withOpacity(0.35)),
           const SizedBox(height: 16),
-          Text(
-            lang == 'ru' ? "Специалисты не найдены" : "Мамандар табылмады", 
-            style: const TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.w500)
-          ),
-          const SizedBox(height: 4),
-          Text(
-            lang == 'ru' ? "Попробуйте изменить запрос" : "Сұранысты өзгертіп көріңіз", 
-            style: const TextStyle(color: Colors.grey, fontSize: 13)
+          Text(lang == 'ru' ? 'Мастера не найдены' : 'Шебер табылмады',
+              style: const TextStyle(color: Colors.grey, fontSize: 15)),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () {
+              _searchCtrl.clear();
+              setState(() => _selectedSpec = null);
+              _load(reset: true);
+            },
+            child: Text(lang == 'ru' ? 'Сбросить фильтры' : 'Сүзгіні тазалау'),
           ),
         ],
       ),

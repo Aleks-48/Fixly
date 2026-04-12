@@ -1,7 +1,7 @@
 name: fixly_app
 description: "A new Flutter project."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.2+4  # 1.0.2 — версия для юзеров, 3 — внутренний номер сборки (build number)
 
 environment:
   sdk: '>=3.3.0 <4.0.0' # Поднял версию для совместимости с новыми пакетами
@@ -49,11 +49,13 @@ dependencies:
   signature: ^6.3.0
   sign_in_with_apple: ^6.1.1
   crypto: ^3.0.7
+  camera: ^0.10.5
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  change_app_package_name: ^1.5.0
 
 flutter:
   uses-material-design: true

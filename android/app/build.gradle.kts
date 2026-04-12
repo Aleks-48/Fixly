@@ -16,7 +16,7 @@ plugins {
 
 android {
     // ВНИМАНИЕ: Проверь, чтобы этот ID совпадал с ID в Google Play Console!
-    namespace = "com.example.fixly_app" 
+    namespace = "com.aleks48.fixlyapp" 
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -42,7 +42,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.fixly_app"
+        applicationId = "com.aleks48.fixlyapp"
         minSdk = 26 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
