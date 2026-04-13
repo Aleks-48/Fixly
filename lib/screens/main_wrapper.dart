@@ -18,7 +18,7 @@ import 'package:fixly_app/screens/library_screen.dart';
 import 'package:fixly_app/screens/resident_home_page.dart'; 
 import 'package:fixly_app/screens/market_screen.dart';
 import 'package:fixly_app/screens/voting_page.dart'; 
-
+import 'package:fixly_app/screens/my_work_screen.dart';
 // Ядро и утилиты
 import 'package:fixly_app/core/sheber_ata_helper.dart';
 import 'package:fixly_app/main.dart'; 
@@ -100,7 +100,7 @@ class _MainWrapperState extends State<MainWrapper> {
     if (_userRole == 'resident') {
       Navigator.push(
         context, 
-        MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId: null, masterName: null, prefillDescription: '',))
+        MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId:'', masterName:'', prefillDescription: '',))
       );
       return;
     }
@@ -134,7 +134,7 @@ class _MainWrapperState extends State<MainWrapper> {
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId: null, masterName: null, prefillDescription: '',)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId:'', masterName:'', prefillDescription: '',)));
                   },
                 ),
                 _buildMenuOption(
