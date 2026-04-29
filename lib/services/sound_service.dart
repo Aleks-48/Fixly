@@ -1,4 +1,5 @@
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class SoundService {
   static final AudioPlayer _player = AudioPlayer();

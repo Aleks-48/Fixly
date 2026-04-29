@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class PdfReportService {
   /// ОСНОВНОЙ МЕТОД: Создает официальный PDF-лист голосования и возвращает байты

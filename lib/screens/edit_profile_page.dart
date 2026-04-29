@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/main.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class EditProfilePage extends StatefulWidget {
   final String initialName;

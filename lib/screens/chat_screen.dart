@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:fixly_app/screens/call_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ChatScreen extends StatefulWidget {
   final String taskId;

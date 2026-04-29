@@ -12,6 +12,7 @@ import 'package:fixly_app/screens/register_page.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
 import 'package:fixly_app/screens/masters_list_screen.dart';
 import 'firebase_options.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Глобальные нотификаторы для быстрого доступа из любой точки приложения
 final ValueNotifier<String> appLanguage = ValueNotifier<String>('ru');

@@ -8,6 +8,7 @@ import 'package:open_file/open_file.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ============================================================
 //  DocumentsScreen — экран документов для председателя ОСИ

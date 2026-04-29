@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/services/yolo_service.dart';
 import 'package:fixly_app/screens/create_order_page.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ============================================================================
 // DefectScannerScreen — интеллектуальный сканер дефектов (YOLOv8)

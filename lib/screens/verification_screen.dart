@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ============================================================
 //  VerificationScreen — верификация мастера
