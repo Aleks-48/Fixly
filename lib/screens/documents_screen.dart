@@ -130,7 +130,6 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     },
   ];
   
-  get html => null;
 
   @override
   void initState() {
@@ -139,73 +138,53 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
 
   // ── ГЕНЕРАЦИЯ PDF ──────────────────────────────────────────
 Future<void> _generateAndOpenDocument(
-      Map<String, dynamic> doc, Map<String, String> data, String lang) async {
-    
-    pw.Font font;
-    pw.Font fontBold;
-    
-    try {
-      // Безопасная попытка загрузить кириллические шрифты из сети
-      font = await PdfGoogleFonts.robotoRegular();
-      fontBold = await PdfGoogleFonts.robotoBold();
-    } catch (e) {
-      debugPrint("Ошибка сети при загрузке шрифта: $e");
-      // Резервный вариант на случай отсутствия интернета
-      // В идеале для кириллицы лучше загружать локальный шрифт: 
-      // font = pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
-      font = pw.Font.helvetica();
-      fontBold = pw.Font.helveticaBold();
-    }
+    Map<String, dynamic> doc, Map<String, String> data, String lang) async {
+  
+  final pdf = pw.Document();
+  final String docId = doc['id'];
 
-    final pdf = pw.Document();
-    final String docId = doc['id'];
+  // Загружаем шрифты один раз для всех
+  final font = await PdfGoogleFonts.robotoRegular();
+  final fontBold = await PdfGoogleFonts.robotoBold();
 
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
-        build: (pw.Context ctx) {
-          if (docId == 'p1') {
-            return _buildProtocolPages(data, font, fontBold);
-          } else if (docId == 'l1') {
-            return _buildVotingSheetPages(data, font, fontBold);
-          } else if (docId == 'a1') {
-            return _buildActR1Pages(data, font, fontBold);
-          } else {
-            return _buildDebtorNoticePage(data, font, fontBold);
-          }
-        },
-      ),
-    );
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.symmetric(horizontal: 30, vertical: 30),
+      build: (pw.Context ctx) {
+        if (docId == 'p1') return _buildProtocolPages(data, font, fontBold);
+        if (docId == 'l1') return _buildVotingSheetPages(data, font, fontBold);
+        if (docId == 'a1') return _buildActR1Pages(data, font, fontBold);
+        return _buildDebtorNoticePage(data, font, fontBold);
+      },
+    ),
+  );
 
-    try {
-      // Именно здесь происходил краш (pdf.save триггерит рендеринг)
+  try {
+    if (kIsWeb) {
+      // ИСПОЛЬЗУЕМ PRINTING ВМЕСТО HTML BLOB
+      // Это исключает ошибку "Null check operator" в браузере
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+        name: 'fixly_${docId}.pdf',
+      );
+    } else {
+      // Логика для Android/iOS остается как была
       final bytes = await pdf.save();
-
-      if (kIsWeb) {
-        // Теперь Web работает безопасно благодаря universal_html
-        final blob = html.Blob([bytes], 'application/pdf');
-        final url = html.Url.createObjectUrlFromBlob(blob);
-        final anchor = html.AnchorElement(href: url)
-          ..setAttribute("download", "fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf")
-          ..click();
-        html.Url.revokeObjectUrl(url);
-      } else {
-        // Логика для Android/iOS
-        final output = await getTemporaryDirectory();
-        final file = File("${output.path}/fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf");
-        await file.writeAsBytes(bytes);
-        await OpenFile.open(file.path);
-      }
-    } catch (e) {
-      debugPrint("PDF error: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Ошибка при создании файла: $e"), backgroundColor: Colors.redAccent),
-        );
-      }
+      final output = await getTemporaryDirectory();
+      final file = File("${output.path}/fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf");
+      await file.writeAsBytes(bytes);
+      await OpenFile.open(file.path);
+    }
+  } catch (e) {
+    debugPrint("PDF error: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Ошибка: $e"), backgroundColor: Colors.redAccent),
+      );
     }
   }
+}
 
   // ── ПРОТОКОЛ СОБРАНИЯ ──────────────────────────────────────
   List<pw.Widget> _buildProtocolPages(
