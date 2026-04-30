@@ -126,6 +126,8 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
       ],
     },
   ];
+  
+  get html => null;
 
   @override
   void initState() {
@@ -133,7 +135,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   }
 
   // ── ГЕНЕРАЦИЯ PDF ──────────────────────────────────────────
-  Future<void> _generateAndOpenDocument(
+Future<void> _generateAndOpenDocument(
       Map<String, dynamic> doc, Map<String, String> data, String lang) async {
     final pdf = pw.Document();
     final font = await PdfGoogleFonts.robotoRegular();
@@ -159,15 +161,28 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     );
 
     try {
-      final output = await getTemporaryDirectory();
-      final file = File("${output.path}/fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf");
-      await file.writeAsBytes(await pdf.save());
-      await OpenFile.open(file.path);
+      final bytes = await pdf.save();
+
+      if (kIsWeb) {
+        // Логика для Web: Скачивание через Blob
+        final blob = html.Blob([bytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement(href: url)
+          ..setAttribute("download", "fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf")
+          ..click();
+        html.Url.revokeObjectUrl(url);
+      } else {
+        // Логика для Android/iOS (ваш текущий код)
+        final output = await getTemporaryDirectory();
+        final file = File("${output.path}/fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf");
+        await file.writeAsBytes(bytes);
+        await OpenFile.open(file.path);
+      }
     } catch (e) {
-      debugPrint("PDF generation error: $e");
+      debugPrint("PDF error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Ошибка генерации: $e"), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text("Ошибка: $e"), backgroundColor: Colors.redAccent),
         );
       }
     }

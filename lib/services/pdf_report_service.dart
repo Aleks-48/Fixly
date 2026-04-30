@@ -184,4 +184,22 @@ class PdfReportService {
     }
     return null;
   }
+  /// МЕТОД ДЛЯ ЗАПУСКА ПЕЧАТИ/СОХРАНЕНИЯ (Исправляет ошибку в Web)
+  static Future<void> exportAndOpenPdf({
+    required String proposalTitle,
+    required List<Map<String, dynamic>> votes,
+  }) async {
+    // 1. Генерируем байты документа через твой существующий метод
+    final pdfBytes = await createPdfDocument(
+      proposalTitle: proposalTitle,
+      votes: votes,
+    );
+
+    // 2. Используем библиотеку printing для отображения
+    // Она сама понимает: в вебе — открыть печать, на мобилке — через натив
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdfBytes,
+      name: 'Акт_голосования_${DateTime.now().millisecondsSinceEpoch}.pdf',
+    );
+  }
 }
