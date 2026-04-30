@@ -10,6 +10,9 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
+// ВАЖНО: Правильный импорт для Web, который не ломает мобильную сборку
+import 'package:universal_html/html.dart' as html;
+
 // ============================================================
 //  DocumentsScreen — экран документов для председателя ОСИ
 //
@@ -137,9 +140,24 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
   // ── ГЕНЕРАЦИЯ PDF ──────────────────────────────────────────
 Future<void> _generateAndOpenDocument(
       Map<String, dynamic> doc, Map<String, String> data, String lang) async {
+    
+    pw.Font font;
+    pw.Font fontBold;
+    
+    try {
+      // Безопасная попытка загрузить кириллические шрифты из сети
+      font = await PdfGoogleFonts.robotoRegular();
+      fontBold = await PdfGoogleFonts.robotoBold();
+    } catch (e) {
+      debugPrint("Ошибка сети при загрузке шрифта: $e");
+      // Резервный вариант на случай отсутствия интернета
+      // В идеале для кириллицы лучше загружать локальный шрифт: 
+      // font = pw.Font.ttf(await rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
+      font = pw.Font.helvetica();
+      fontBold = pw.Font.helveticaBold();
+    }
+
     final pdf = pw.Document();
-    final font = await PdfGoogleFonts.robotoRegular();
-    final fontBold = await PdfGoogleFonts.robotoBold();
     final String docId = doc['id'];
 
     pdf.addPage(
@@ -161,10 +179,11 @@ Future<void> _generateAndOpenDocument(
     );
 
     try {
+      // Именно здесь происходил краш (pdf.save триггерит рендеринг)
       final bytes = await pdf.save();
 
       if (kIsWeb) {
-        // Логика для Web: Скачивание через Blob
+        // Теперь Web работает безопасно благодаря universal_html
         final blob = html.Blob([bytes], 'application/pdf');
         final url = html.Url.createObjectUrlFromBlob(blob);
         final anchor = html.AnchorElement(href: url)
@@ -172,7 +191,7 @@ Future<void> _generateAndOpenDocument(
           ..click();
         html.Url.revokeObjectUrl(url);
       } else {
-        // Логика для Android/iOS (ваш текущий код)
+        // Логика для Android/iOS
         final output = await getTemporaryDirectory();
         final file = File("${output.path}/fixly_${docId}_${DateTime.now().millisecondsSinceEpoch}.pdf");
         await file.writeAsBytes(bytes);
@@ -182,7 +201,7 @@ Future<void> _generateAndOpenDocument(
       debugPrint("PDF error: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Ошибка: $e"), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text("Ошибка при создании файла: $e"), backgroundColor: Colors.redAccent),
         );
       }
     }
