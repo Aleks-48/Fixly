@@ -4,6 +4,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/login_page.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
+import 'package:fixly_app/screens/osi_selection_screen.dart'; // Добавлен импорт экрана выбора ОСИ
 import 'package:lucide_icons/lucide_icons.dart';
 
 // ============================================================
@@ -11,9 +12,8 @@ import 'package:lucide_icons/lucide_icons.dart';
 //  • Анимированное появление
 //  • Email + пароль через Supabase
 //  • Google Sign-Up (реальная OAuth интеграция)
-//  • Выбор роли: житель / мастер
+//  • Выбор роли: житель / мастер / председатель оси
 //  • Сохранение профиля в таблицу profiles
-//  • Без Apple Sign-In
 // ============================================================
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -35,7 +35,7 @@ class _RegisterPageState extends State<RegisterPage>
   bool    _isGoogleLoading = false;
   bool    _obscurePass     = true;
   bool    _obscurePass2    = true;
-  String  _selectedRole    = 'resident'; // resident | master
+  String  _selectedRole    = 'resident'; // resident | master | osi
   String? _errorMessage;
 
   late AnimationController _animCtrl;
@@ -94,7 +94,6 @@ class _RegisterPageState extends State<RegisterPage>
     setState(() { _isLoading = true; _errorMessage = null; });
 
     try {
-      // 1. Создаём пользователя в Auth
       final res = await _supabase.auth.signUp(
         email   : _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
@@ -103,17 +102,30 @@ class _RegisterPageState extends State<RegisterPage>
       final user = res.user;
       if (user == null) throw Exception('User is null after signUp');
 
-      // 2. Создаём профиль в таблице profiles
+      // ИСПРАВЛЕНИЕ: Явно указываем user_type, чтобы БД не ставила "master" по умолчанию
+      final String userType = _selectedRole == 'master' ? 'contractor' : 'resident';
+
       await _supabase.from('profiles').upsert({
-        'id'       : user.id,
-        'full_name': _nameCtrl.text.trim(),
-        'role'     : _selectedRole,
-        'email'    : _emailCtrl.text.trim(),
+        'id'        : user.id,
+        'full_name' : _nameCtrl.text.trim(),
+        'role'      : _selectedRole, // Сохраняется выбранная роль (в т.ч. 'osi')
+        'user_type' : userType,      // Явная передача типа
+        'email'     : _emailCtrl.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
       });
 
       if (mounted) {
-        _showSuccess();
+        // Если Supabase сразу авторизует (без подтверждения почты) — кидаем на экран выбора ОСИ
+        if (res.session != null) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const OsiSelectionScreen()),
+            (_) => false,
+          );
+        } else {
+          // Если требуется подтверждение по почте, показываем окно
+          _showSuccess();
+        }
       }
     } on AuthException catch (e) {
       _showError(_mapAuthError(e.message));
@@ -133,8 +145,7 @@ class _RegisterPageState extends State<RegisterPage>
 
     try {
       const webClientId ='700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com';
-      // ↑ Замени на свой Client ID из Google Cloud Console
-
+      
       final googleSignIn = GoogleSignIn(
         serverClientId: webClientId,
         scopes: ['email', 'profile'],
@@ -152,7 +163,6 @@ class _RegisterPageState extends State<RegisterPage>
 
       if (idToken == null) throw Exception('Google ID token is null');
 
-      // Вход/регистрация через Supabase
       final res = await _supabase.auth.signInWithIdToken(
         provider   : OAuthProvider.google,
         idToken    : idToken,
@@ -162,7 +172,6 @@ class _RegisterPageState extends State<RegisterPage>
       final user = res.user;
       if (user == null) throw Exception('User is null');
 
-      // Создаём/обновляем профиль
       final existing = await _supabase
           .from('profiles')
           .select('id')
@@ -170,21 +179,24 @@ class _RegisterPageState extends State<RegisterPage>
           .maybeSingle();
 
       if (existing == null) {
-        // Новый пользователь — создаём профиль
+        final String userType = _selectedRole == 'master' ? 'contractor' : 'resident';
+        
         await _supabase.from('profiles').insert({
           'id'        : user.id,
           'full_name' : googleUser.displayName ?? '',
           'avatar_url': googleUser.photoUrl,
           'email'     : googleUser.email,
-          'role'      : _selectedRole,
+          'role'      : _selectedRole, 
+          'user_type' : userType,
           'created_at': DateTime.now().toIso8601String(),
         });
       }
 
+      // ИСПРАВЛЕНИЕ: Перекидываем на карту выбора ОСИ после Google
       if (mounted) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const MainWrapper()),
+          MaterialPageRoute(builder: (_) => const OsiSelectionScreen()),
           (_) => false,
         );
       }
@@ -193,8 +205,8 @@ class _RegisterPageState extends State<RegisterPage>
     } catch (e) {
       debugPrint('Google Sign-Up error: $e');
       _showError(appLanguage.value == 'ru'
-          ? 'Ошибка входа через Google'
-          : 'Google арқылы кіру қатесі');
+          ? 'Ошибка входа через Google. Проверьте настройки.'
+          : 'Google арқылы кіру қатесі. Параметрлерді тексеріңіз.');
     } finally {
       if (mounted) setState(() => _isGoogleLoading = false);
     }
@@ -363,6 +375,7 @@ class _RegisterPageState extends State<RegisterPage>
                                 fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 10),
+                          // Карточки в два ряда
                           Row(
                             children: [
                               Expanded(
@@ -389,6 +402,19 @@ class _RegisterPageState extends State<RegisterPage>
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: _roleCard(
+                              role    : 'osi',
+                              label   : lang == 'ru' ? 'Председатель ОСИ' : 'МИБ төрағасы',
+                              subtitle: lang == 'ru'
+                                  ? 'Управление домом и заявками'
+                                  : 'Үйді және тапсырыстарды басқару',
+                              icon    : LucideIcons.building,
+                              lang    : lang,
+                            ),
                           ),
                         ],
                       ),
@@ -466,32 +492,32 @@ class _RegisterPageState extends State<RegisterPage>
 
                     const SizedBox(height: 14),
 
-// ── ПОВТОР ПАРОЛЯ ─────────────────────────
-_animated(4,
-  child: _buildTextField(
-    controller: _pass2Ctrl,
-    label     : lang == 'ru' ? 'Повторите пароль' : 'Парольды қайталаңыз',
-    hint      : '••••••••',
-    icon      : LucideIcons.lock, // ЗАМЕНИЛ LucideIcons.lockKeyhole на LucideIcons.lock
-    obscure   : _obscurePass2,
-    suffixIcon: IconButton(
-      icon: Icon(
-        _obscurePass2 ? LucideIcons.eyeOff : LucideIcons.eye,
-        color: const Color(0xFF4361EE), size: 18,
-      ),
-      onPressed: () =>
-          setState(() => _obscurePass2 = !_obscurePass2),
-    ),
-    validator: (v) {
-      if (v != _passCtrl.text) {
-        return lang == 'ru'
-            ? 'Пароли не совпадают'
-            : 'Парольдар сәйкес емес';
-      }
-      return null;
-    },
-  ),
-),
+                    // ── ПОВТОР ПАРОЛЯ ─────────────────────────
+                    _animated(4,
+                      child: _buildTextField(
+                        controller: _pass2Ctrl,
+                        label     : lang == 'ru' ? 'Повторите пароль' : 'Парольды қайталаңыз',
+                        hint      : '••••••••',
+                        icon      : LucideIcons.lock,
+                        obscure   : _obscurePass2,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePass2 ? LucideIcons.eyeOff : LucideIcons.eye,
+                            color: const Color(0xFF4361EE), size: 18,
+                          ),
+                          onPressed: () =>
+                              setState(() => _obscurePass2 = !_obscurePass2),
+                        ),
+                        validator: (v) {
+                          if (v != _passCtrl.text) {
+                            return lang == 'ru'
+                                ? 'Пароли не совпадают'
+                                : 'Парольдар сәйкес емес';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
 
                     const SizedBox(height: 14),
 
