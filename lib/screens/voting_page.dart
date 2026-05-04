@@ -12,7 +12,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:intl/intl.dart';
-
+import 'package:flutter/foundation.dart' show kIsWeb; // Нужно для проверки на веб-сайт
 class VotingPage extends StatefulWidget {
   final String proposalId;
   final String proposalTitle;
@@ -146,6 +146,7 @@ class _VotingPageState extends State<VotingPage> with TickerProviderStateMixin {
   }
 
   // ── ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ДОКУМЕНТА (PDF) ──────────────────
+  // ── ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ДОКУМЕНТА (PDF) ──────────────────
   Future<void> _generateOfficialProtocol() async {
     setState(() => _isUploading = true);
     try {
@@ -155,51 +156,81 @@ class _VotingPageState extends State<VotingPage> with TickerProviderStateMixin {
       final Map voteMap = {for (var v in votes) v['user_id']: v};
 
       final pdf = pw.Document();
+      
+      // Загружаем шрифты с поддержкой кириллицы
       final font = await PdfGoogleFonts.robotoRegular();
       final bold = await PdfGoogleFonts.robotoBold();
 
       pdf.addPage(pw.MultiPage(
+        // ЭТО ИСПРАВЛЯЕТ "КВАДРАТЫ" - Применяем шрифт КО ВСЕМУ документу
+        pageTheme: pw.PageTheme(
+          theme: pw.ThemeData.withFont(
+            base: font,
+            bold: bold,
+          ),
+        ),
         pageFormat: PdfPageFormat.a4,
         build: (ctx) => [
-          pw.Center(child: pw.Text("ПРОТОКОЛ ВНЕОЧЕРЕДНОГО СОБРАНИЯ СОБСТВЕННИКОВ", style: pw.TextStyle(font: bold, fontSize: 14))),
+          pw.Center(child: pw.Text("ПРОТОКОЛ ВНЕОЧЕРЕДНОГО СОБРАНИЯ СОБСТВЕННИКОВ", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14))),
           pw.SizedBox(height: 10),
-          pw.Text("ОСИ: $_osiName", style: pw.TextStyle(font: bold)),
+          pw.Text("ОСИ: $_osiName", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           pw.Text("Адрес: $_buildingAddress"),
           pw.Text("Дата начала: ${DateFormat('dd.MM.yyyy HH:mm').format(_votingStartDate)}"),
           pw.Divider(),
-          pw.Text("ПОВЕСТКА ДНЯ: $_currentTitle", style: pw.TextStyle(font: bold)),
+          pw.Text("ПОВЕСТКА ДНЯ: $_currentTitle", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
           pw.SizedBox(height: 15),
           pw.Table(
             border: pw.TableBorder.all(),
             children: [
               pw.TableRow(children: [
-                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Кв.", style: pw.TextStyle(font: bold))),
-                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ФИО Собственника", style: pw.TextStyle(font: bold))),
-                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Решение", style: pw.TextStyle(font: bold))),
-                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Подпись", style: pw.TextStyle(font: bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Кв.", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ФИО Собственника", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Решение", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Подпись", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
               ]),
               for (var res in residents) 
                 pw.TableRow(children: [
-                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${res['apartment_number'] ?? '-'}")),
-                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${res['full_name']}")),
-                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(voteMap[res['id']]?['choice'] == 'yes' ? 'ЗА' : 'ПРОТИВ')),
-                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ЭЦП/Моб.подпись")),
+                  // Убираем null, если номер квартиры или имя пустые
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${res['apartment_number'] ?? res['apartment'] ?? '-_-'}")),
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${res['full_name'] ?? res['first_name'] ?? 'Не указано'}")),
+                  
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(
+                    voteMap[res['id']]?['choice'] == 'yes' ? 'ЗА' : 
+                    voteMap[res['id']]?['choice'] == 'no' ? 'ПРОТИВ' : 
+                    voteMap[res['id']]?['choice'] == 'abstain' ? 'ВОЗД.' : 'Не голосовал'
+                  )),
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ЭЦП/Моб.")),
                 ]),
             ],
           ),
           pw.SizedBox(height: 20),
-          pw.Text("ИТОГИ: ЗА - $_yesCount, ПРОТИВ - $_noCount, ВОЗДЕРЖАЛИСЬ - $_abstainCount", style: pw.TextStyle(font: bold)),
+          pw.Text("ИТОГИ: ЗА - $_yesCount, ПРОТИВ - $_noCount, ВОЗДЕРЖАЛИСЬ - $_abstainCount", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
         ],
       ));
 
-      final output = await getTemporaryDirectory();
-      final file = File("${output.path}/Protocol_${DateTime.now().millisecondsSinceEpoch}.pdf");
-      await file.writeAsBytes(await pdf.save());
-      await OpenFile.open(file.path);
+      final bytes = await pdf.save();
+      final fileName = "Protocol_${DateTime.now().millisecondsSinceEpoch}.pdf";
+
+      // ЭТО ИСПРАВЛЯЕТ КРАСНУЮ ОШИБКУ НА САЙТЕ
+      if (kIsWeb) {
+        // На вебе используем пакет printing для сохранения/просмотра
+        await Printing.layoutPdf(
+          onLayout: (PdfPageFormat format) async => bytes,
+          name: fileName,
+        );
+      } else {
+        // На Android/iOS сохраняем во временную папку и открываем
+        final output = await getTemporaryDirectory();
+        final file = File("${output.path}/$fileName");
+        await file.writeAsBytes(bytes);
+        await OpenFile.open(file.path);
+      }
+
     } catch (e) {
       _showSnackBar("Ошибка PDF: $e", Colors.red);
+      debugPrint("PDF Gen Error: $e");
     } finally {
-      setState(() => _isUploading = false);
+      if (mounted) setState(() => _isUploading = false);
     }
   }
 
