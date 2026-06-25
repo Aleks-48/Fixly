@@ -1,10 +1,17 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/register_page.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+
+// Deep link, на который Supabase вернёт пользователя после входа через Google.
+// ВАЖНО: эта же строка должна быть зарегистрирована в:
+//  • android/app/src/main/AndroidManifest.xml (intent-filter)
+//  • ios/Runner/Info.plist (CFBundleURLSchemes)
+//  • Supabase Dashboard → Authentication → URL Configuration → Redirect URLs
+const String _kGoogleRedirectTo = 'fixlyapp://login-callback';
 
 // ============================================================
 //  LoginPage — экран входа
@@ -33,6 +40,8 @@ class _LoginPageState extends State<LoginPage>
   bool _obscurePass     = true;
   String? _errorMessage;
 
+  StreamSubscription<AuthState>? _authSub;
+
   late AnimationController _animCtrl;
   late List<Animation<double>> _fadeAnims;
   late List<Animation<Offset>>  _slideAnims;
@@ -42,6 +51,44 @@ class _LoginPageState extends State<LoginPage>
     super.initState();
     _setupAnimations();
     _animCtrl.forward();
+    _listenForOAuthCompletion();
+  }
+
+  // Слушаем глобальные изменения сессии. AuthGate в main.dart сам переключит
+  // экран на MainWrapper — здесь нам нужно только убедиться, что у нового
+  // пользователя (например, первый вход через Google) есть строка в profiles.
+  void _listenForOAuthCompletion() {
+    _authSub = _supabase.auth.onAuthStateChange.listen((data) async {
+      if (data.event == AuthChangeEvent.signedIn && data.session != null) {
+        await _ensureProfileExists(data.session!.user);
+      }
+    });
+  }
+
+  Future<void> _ensureProfileExists(User user) async {
+    try {
+      final existing = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (existing == null) {
+        await _supabase.from('profiles').upsert({
+          'id'        : user.id,
+          'full_name' : user.userMetadata?['full_name'] ??
+              user.userMetadata?['name'] ?? '',
+          'avatar_url': user.userMetadata?['avatar_url'] ??
+              user.userMetadata?['picture'],
+          'email'     : user.email,
+          'role'      : 'resident',
+          'user_type' : 'resident',
+          'chairman_verification_status': 'unverified',
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+    } catch (e) {
+      debugPrint('ensureProfileExists (login): $e');
+    }
   }
 
   void _setupAnimations() {
@@ -76,6 +123,7 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _animCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
@@ -111,48 +159,22 @@ class _LoginPageState extends State<LoginPage>
   }
 
   // ── ВХОД ЧЕРЕЗ GOOGLE ─────────────────────────────────────
+  // Открывает системный браузер/WebView с Google OAuth. После успешного
+  // входа Supabase сам перенаправит пользователя обратно в приложение через
+  // _kGoogleRedirectTo, обновит сессию, а AuthGate (main.dart) переключит
+  // экран на MainWrapper — здесь явный Navigator.push не нужен.
   Future<void> _signInWithGoogle() async {
     setState(() { _isGoogleLoading = true; _errorMessage = null; });
 
     try {
-      const webClientId ='700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com';
-      // ↑ Замени на свой Client ID из Google Cloud Console
-      //   (Проект → APIs & Services → Credentials → OAuth 2.0 Web Client)
-
-      final googleSignIn = GoogleSignIn(
-        serverClientId: webClientId,
-        scopes: ['email', 'profile'],
+      await _supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: _kGoogleRedirectTo,
+        authScreenLaunchMode: LaunchMode.externalApplication,
       );
-
-      final googleUser = await googleSignIn.signIn();
-      if (googleUser == null) {
-        // Пользователь закрыл диалог
-        setState(() => _isGoogleLoading = false);
-        return;
-      }
-
-      final googleAuth = await googleUser.authentication;
-      final accessToken  = googleAuth.accessToken;
-      final idToken      = googleAuth.idToken;
-
-      if (idToken == null) {
-        throw Exception('Google ID token is null');
-      }
-
-      // Передаём Google токен в Supabase
-      await _supabase.auth.signInWithIdToken(
-        provider   : OAuthProvider.google,
-        idToken    : idToken,
-        accessToken: accessToken,
-      );
-
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const MainWrapper()),
-          (_) => false,
-        );
-      }
+      // signInWithOAuth возвращает true сразу после открытия окна входа,
+      // а не после реального завершения авторизации — поэтому просто
+      // снимаем индикатор загрузки, дальнейшее берёт на себя AuthGate.
     } on AuthException catch (e) {
       _showError(_mapAuthError(e.message));
     } catch (e) {

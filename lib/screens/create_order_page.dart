@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/orders_page.dart';
+import 'package:fixly_app/services/building_context_service.dart';
 
 // ============================================================
 //  CreateOrderPage — создание заявки
@@ -16,16 +17,16 @@ import 'package:fixly_app/screens/orders_page.dart';
 //  • Выбор приоритета
 // ============================================================
 class CreateOrderPage extends StatefulWidget {
-  final String  masterId;
-  final String  masterName;
-  final String  initialCategory;
-  final String  prefillDescription; // из YOLO-сканера
+  final String masterId;
+  final String masterName;
+  final String initialCategory;
+  final String prefillDescription; // из YOLO-сканера
 
   const CreateOrderPage({
     super.key,
-    this.masterId          = '',
-    this.masterName        = '',
-    this.initialCategory   = '',
+    this.masterId = '',
+    this.masterName = '',
+    this.initialCategory = '',
     this.prefillDescription = '',
   });
 
@@ -34,39 +35,58 @@ class CreateOrderPage extends StatefulWidget {
 }
 
 class _CreateOrderPageState extends State<CreateOrderPage> {
-  final _supabase   = Supabase.instance.client;
-  final _titleCtrl  = TextEditingController();
-  final _descCtrl   = TextEditingController();
-  final _addrCtrl   = TextEditingController();
-  final _priceCtrl  = TextEditingController();
-  final _formKey    = GlobalKey<FormState>();
+  final _supabase = Supabase.instance.client;
+  final _titleCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _addrCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
 
-  bool   _isLoading  = false;
-  String _category   = '';
-  String _priority   = 'medium';
-  File?  _photoFile;
+  bool _isLoading = false;
+  String _category = '';
+  String _priority = 'medium';
+  File? _photoFile;
   String? _errorMsg;
   String? _userApartment;
-  String? _userAddress;
+  String? _userBuildingId;
 
   // Специализации
   static const _categories = {
-    'plumber'    : {'ru': 'Сантехник',   'kz': 'Сантехник',   'icon': LucideIcons.droplets},
-    'electrician': {'ru': 'Электрик',    'kz': 'Электрик',    'icon': LucideIcons.zap},
-    'painter'    : {'ru': 'Отделочник',  'kz': 'Жөндеуші',    'icon': LucideIcons.paintbrush},
-    'carpenter'  : {'ru': 'Плотник',     'kz': 'Ұста',        'icon': LucideIcons.hammer},
-    'welder'     : {'ru': 'Сварщик',     'kz': 'Дәнекерші',   'icon': LucideIcons.flame},
-    'locksmith'  : {'ru': 'Слесарь',     'kz': 'Слесарь',     'icon': LucideIcons.keyRound},
-    'cleaner'    : {'ru': 'Уборщик',     'kz': 'Тазалаушы',   'icon': LucideIcons.sparkles},
-    'general'    : {'ru': 'Другое',      'kz': 'Басқа',       'icon': LucideIcons.wrench},
+    'plumber': {
+      'ru': 'Сантехник',
+      'kz': 'Сантехник',
+      'icon': LucideIcons.droplets
+    },
+    'electrician': {
+      'ru': 'Электрик',
+      'kz': 'Электрик',
+      'icon': LucideIcons.zap
+    },
+    'painter': {
+      'ru': 'Отделочник',
+      'kz': 'Жөндеуші',
+      'icon': LucideIcons.paintbrush
+    },
+    'carpenter': {'ru': 'Плотник', 'kz': 'Ұста', 'icon': LucideIcons.hammer},
+    'welder': {'ru': 'Сварщик', 'kz': 'Дәнекерші', 'icon': LucideIcons.flame},
+    'locksmith': {
+      'ru': 'Слесарь',
+      'kz': 'Слесарь',
+      'icon': LucideIcons.keyRound
+    },
+    'cleaner': {
+      'ru': 'Уборщик',
+      'kz': 'Тазалаушы',
+      'icon': LucideIcons.sparkles
+    },
+    'general': {'ru': 'Другое', 'kz': 'Басқа', 'icon': LucideIcons.wrench},
   };
 
   @override
   void initState() {
     super.initState();
-    _category = widget.initialCategory.isNotEmpty
-        ? widget.initialCategory
-        : 'general';
+    _category =
+        widget.initialCategory.isNotEmpty ? widget.initialCategory : 'general';
     if (widget.prefillDescription.isNotEmpty) {
       _descCtrl.text = widget.prefillDescription;
     }
@@ -86,24 +106,36 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
     try {
+      final context = await BuildingContextService.loadCurrent();
       final profile = await _supabase
           .from('profiles')
           .select('apartment_number, building_id, buildings(address)')
           .eq('id', uid)
           .maybeSingle();
       if (profile != null && mounted) {
-        final apt     = profile['apartment_number']?.toString() ?? '';
-        final building = (profile['buildings'] as Map?)??{};
-        final addr    = building['address']?.toString() ?? '';
+        final apt = profile['apartment_number']?.toString() ?? '';
+        final building = (profile['buildings'] as Map?) ?? {};
+        final addr = building['address']?.toString() ?? '';
         setState(() {
           _userApartment = apt;
-          _userAddress   = addr;
+          _userBuildingId =
+              context?.buildingId ?? profile['building_id']?.toString();
           if (_addrCtrl.text.isEmpty && addr.isNotEmpty) {
             _addrCtrl.text = addr;
           }
         });
+      } else if (context?.buildingId != null && mounted) {
+        setState(() {
+          _userBuildingId = context!.buildingId;
+          _userApartment = context.apartmentNumber;
+          if (_addrCtrl.text.isEmpty && context.buildingAddress != null) {
+            _addrCtrl.text = context.buildingAddress!;
+          }
+        });
       }
-    } catch (e) { debugPrint('loadUserProfile: $e'); }
+    } catch (e) {
+      debugPrint('loadUserProfile: $e');
+    }
   }
 
   // ── ВЫБОР ФОТО ────────────────────────────────────────────
@@ -131,7 +163,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             ),
             ListTile(
               leading: const Icon(LucideIcons.image, color: Colors.blueAccent),
-              title: Text(lang == 'ru' ? 'Выбрать из галереи' : 'Галереядан таңдау'),
+              title: Text(
+                  lang == 'ru' ? 'Выбрать из галереи' : 'Галереядан таңдау'),
               onTap: () async {
                 Navigator.pop(context);
                 final f = await ImagePicker()
@@ -155,7 +188,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       return;
     }
 
-    setState(() { _isLoading = true; _errorMsg = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMsg = null;
+    });
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) return;
 
@@ -164,8 +200,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
       // Загружаем фото в Storage
       if (_photoFile != null) {
-        final ext   = _photoFile!.path.split('.').last;
-        final path  = 'orders/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final ext = _photoFile!.path.split('.').last;
+        final path =
+            'orders/$userId/${DateTime.now().millisecondsSinceEpoch}.$ext';
         final bytes = await _photoFile!.readAsBytes();
         await _supabase.storage.from('documents').uploadBinary(path, bytes);
         imageUrl = _supabase.storage.from('documents').getPublicUrl(path);
@@ -173,15 +210,19 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
       // Формируем данные заявки
       final data = <String, dynamic>{
-        'title'        : _titleCtrl.text.trim(),
-        'description'  : _descCtrl.text.trim(),
-        'status'       : 'new',
-        'priority'     : _priority,
-        'user_id'      : userId,
-        'category'     : _category,
-        'address'      : _addrCtrl.text.trim(),
-        'created_at'   : DateTime.now().toIso8601String(),
+        'title': _titleCtrl.text.trim(),
+        'description': _descCtrl.text.trim(),
+        'status': 'new',
+        'priority': _priority,
+        'user_id': userId,
+        'category': _category,
+        'address': _addrCtrl.text.trim(),
+        'created_at': DateTime.now().toIso8601String(),
       };
+
+      if (_userBuildingId != null && _userBuildingId!.isNotEmpty) {
+        data['building_id'] = _userBuildingId;
+      }
 
       // Цена (опционально)
       final priceText = _priceCtrl.text.trim();
@@ -192,7 +233,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       // Прикрепляем мастера, если пришли со страницы мастера
       if (widget.masterId.isNotEmpty) {
         data['master_id'] = widget.masterId;
-        data['status']    = 'in_progress'; // сразу принял
+        data['status'] = 'in_progress'; // сразу принял
       }
 
       // Квартира из профиля
@@ -228,9 +269,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   // ── BUILD ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
-    final cardBg  = isDark ? const Color(0xFF1A1A1C) : Colors.white;
+    final cardBg = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
@@ -248,7 +289,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               ),
             ),
             centerTitle: true,
-            iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+            iconTheme:
+                IconThemeData(color: isDark ? Colors.white : Colors.black87),
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -257,7 +299,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
                   // Мастер (если пришли с его страницы)
                   if (widget.masterName.isNotEmpty)
                     _buildMasterBanner(lang, isDark, cardBg),
@@ -269,38 +310,48 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   const SizedBox(height: 4),
 
                   // Тип услуги
-                  _sectionLabel(lang == 'ru' ? 'Тип услуги *' : 'Қызмет түрі *', isDark),
+                  _sectionLabel(
+                      lang == 'ru' ? 'Тип услуги *' : 'Қызмет түрі *', isDark),
                   const SizedBox(height: 8),
                   _buildCategoryGrid(lang, isDark, cardBg),
 
                   const SizedBox(height: 18),
 
                   // Название
-                  _sectionLabel(lang == 'ru' ? 'Название *' : 'Атауы *', isDark),
+                  _sectionLabel(
+                      lang == 'ru' ? 'Название *' : 'Атауы *', isDark),
                   const SizedBox(height: 8),
                   _buildField(
-                    ctrl     : _titleCtrl,
-                    hint     : lang == 'ru' ? 'Кратко опишите проблему' : 'Мәселені қысқаша сипаттаңыз',
-                    icon     : LucideIcons.fileText,
-                    isDark   : isDark,
+                    ctrl: _titleCtrl,
+                    hint: lang == 'ru'
+                        ? 'Кратко опишите проблему'
+                        : 'Мәселені қысқаша сипаттаңыз',
+                    icon: LucideIcons.fileText,
+                    isDark: isDark,
                     validator: (v) => (v?.isEmpty ?? true)
-                        ? (lang == 'ru' ? 'Введите название' : 'Атауды енгізіңіз')
+                        ? (lang == 'ru'
+                            ? 'Введите название'
+                            : 'Атауды енгізіңіз')
                         : null,
                   ),
 
                   const SizedBox(height: 14),
 
                   // Описание
-                  _sectionLabel(lang == 'ru' ? 'Подробное описание *' : 'Толық сипаттама *', isDark),
+                  _sectionLabel(
+                      lang == 'ru'
+                          ? 'Подробное описание *'
+                          : 'Толық сипаттама *',
+                      isDark),
                   const SizedBox(height: 8),
                   _buildField(
-                    ctrl     : _descCtrl,
-                    hint     : lang == 'ru'
+                    ctrl: _descCtrl,
+                    hint: lang == 'ru'
                         ? 'Что случилось? Где? Когда?'
                         : 'Не болды? Қайда? Қашан?',
-                    icon     : LucideIcons.alignLeft,
-                    isDark   : isDark,
-                    maxLines : 4,
+                    icon: LucideIcons.alignLeft,
+                    isDark: isDark,
+                    maxLines: 4,
                     validator: (v) => (v == null || v.trim().length < 10)
                         ? (lang == 'ru'
                             ? 'Минимум 10 символов'
@@ -314,38 +365,43 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   _sectionLabel(lang == 'ru' ? 'Адрес' : 'Мекенжай', isDark),
                   const SizedBox(height: 8),
                   _buildField(
-                    ctrl    : _addrCtrl,
-                    hint    : lang == 'ru' ? 'Улица, дом' : 'Көше, үй',
-                    icon    : LucideIcons.mapPin,
-                    isDark  : isDark,
+                    ctrl: _addrCtrl,
+                    hint: lang == 'ru' ? 'Улица, дом' : 'Көше, үй',
+                    icon: LucideIcons.mapPin,
+                    isDark: isDark,
                   ),
 
                   const SizedBox(height: 14),
 
                   // Ожидаемая цена (необязательно)
                   _sectionLabel(
-                      lang == 'ru' ? 'Ожидаемая стоимость (₸)' : 'Күтілетін құн (₸)',
+                      lang == 'ru'
+                          ? 'Ожидаемая стоимость (₸)'
+                          : 'Күтілетін құн (₸)',
                       isDark),
                   const SizedBox(height: 8),
                   _buildField(
-                    ctrl    : _priceCtrl,
-                    hint    : lang == 'ru' ? 'Необязательно' : 'Міндетті емес',
-                    icon    : LucideIcons.wallet,
-                    isDark  : isDark,
+                    ctrl: _priceCtrl,
+                    hint: lang == 'ru' ? 'Необязательно' : 'Міндетті емес',
+                    icon: LucideIcons.wallet,
+                    isDark: isDark,
                     keyboard: TextInputType.number,
                   ),
 
                   const SizedBox(height: 18),
 
                   // Приоритет
-                  _sectionLabel(lang == 'ru' ? 'Срочность' : 'Шұғылдық', isDark),
+                  _sectionLabel(
+                      lang == 'ru' ? 'Срочность' : 'Шұғылдық', isDark),
                   const SizedBox(height: 8),
                   _buildPriorityRow(lang, isDark),
 
                   const SizedBox(height: 18),
 
                   // Фото
-                  _sectionLabel(lang == 'ru' ? 'Фото неисправности' : 'Ақаулықтың фотосы', isDark),
+                  _sectionLabel(
+                      lang == 'ru' ? 'Фото неисправности' : 'Ақаулықтың фотосы',
+                      isDark),
                   const SizedBox(height: 8),
                   _buildPhotoArea(lang, isDark, cardBg),
 
@@ -423,8 +479,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       ),
       child: Row(
         children: [
-          const Icon(LucideIcons.userCheck,
-              color: Colors.blueAccent, size: 20),
+          const Icon(LucideIcons.userCheck, color: Colors.blueAccent, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -471,9 +526,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       runSpacing: 8,
       children: _categories.entries.map((e) {
         final isSelected = _category == e.key;
-        final label = lang == 'ru'
-            ? e.value['ru'] as String
-            : e.value['kz'] as String;
+        final label =
+            lang == 'ru' ? e.value['ru'] as String : e.value['kz'] as String;
         final icon = e.value['icon'] as IconData;
         return GestureDetector(
           onTap: () => setState(() => _category = e.key),
@@ -520,16 +574,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   Widget _buildPriorityRow(String lang, bool isDark) {
     final priorities = {
-      'low'   : {'ru': 'Низкая', 'kz': 'Төмен', 'color': Colors.green},
-      'medium': {'ru': 'Средняя','kz': 'Орташа', 'color': Colors.orange},
-      'high'  : {'ru': 'Высокая','kz': 'Жоғары', 'color': Colors.red},
+      'low': {'ru': 'Низкая', 'kz': 'Төмен', 'color': Colors.green},
+      'medium': {'ru': 'Средняя', 'kz': 'Орташа', 'color': Colors.orange},
+      'high': {'ru': 'Высокая', 'kz': 'Жоғары', 'color': Colors.red},
     };
     return Row(
       children: priorities.entries.map((e) {
         final isSelected = _priority == e.key;
-        final label = lang == 'ru'
-            ? e.value['ru'] as String
-            : e.value['kz'] as String;
+        final label =
+            lang == 'ru' ? e.value['ru'] as String : e.value['kz'] as String;
         final color = e.value['color'] as Color;
         return Expanded(
           child: GestureDetector(
@@ -553,8 +606,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(
-                          color: color, shape: BoxShape.circle)),
+                      decoration:
+                          BoxDecoration(color: color, shape: BoxShape.circle)),
                   const SizedBox(height: 4),
                   Text(label,
                       style: TextStyle(
@@ -582,9 +635,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
           color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isDark
-                ? Colors.white.withOpacity(0.1)
-                : Colors.grey.shade200,
+            color:
+                isDark ? Colors.white.withOpacity(0.1) : Colors.grey.shade200,
             style: BorderStyle.solid,
           ),
         ),
@@ -595,7 +647,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 children: [
                   Image.file(_photoFile!, fit: BoxFit.cover),
                   Positioned(
-                    top: 8, right: 8,
+                    top: 8,
+                    right: 8,
                     child: GestureDetector(
                       onTap: () => setState(() => _photoFile = null),
                       child: Container(
@@ -622,8 +675,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                     lang == 'ru'
                         ? 'Нажмите чтобы добавить фото'
                         : 'Фото қосу үшін басыңыз',
-                    style: const TextStyle(
-                        color: Colors.grey, fontSize: 13),
+                    style: const TextStyle(color: Colors.grey, fontSize: 13),
                   ),
                 ],
               ),
@@ -656,13 +708,11 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 padding: const EdgeInsets.only(left: 12, top: 12),
                 child: Icon(icon, color: Colors.blueAccent, size: 18),
               ),
-        prefixIconConstraints: maxLines > 1
-            ? const BoxConstraints(minWidth: 40)
-            : null,
+        prefixIconConstraints:
+            maxLines > 1 ? const BoxConstraints(minWidth: 40) : null,
         filled: true,
-        fillColor: isDark
-            ? Colors.white.withOpacity(0.05)
-            : Colors.grey.shade50,
+        fillColor:
+            isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade50,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(
@@ -679,21 +729,17 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: Colors.blueAccent, width: 1.5),
+          borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: Colors.redAccent, width: 1),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide:
-              const BorderSide(color: Colors.redAccent, width: 1.5),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
         ),
-        errorStyle:
-            const TextStyle(color: Colors.redAccent, fontSize: 11),
+        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 11),
         contentPadding: EdgeInsets.symmetric(
           horizontal: 14,
           vertical: maxLines > 1 ? 12 : 14,

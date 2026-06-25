@@ -8,6 +8,8 @@ import 'package:fixly_app/screens/create_order_page.dart';
 import 'package:fixly_app/screens/orders_page.dart';
 import 'package:fixly_app/screens/defect_scanner_screen.dart';
 import 'package:fixly_app/screens/announcements_screen.dart';
+import 'package:fixly_app/screens/voting_list_screen.dart';
+import 'package:fixly_app/services/building_context_service.dart';
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -19,15 +21,16 @@ class ResidentHomePage extends StatefulWidget {
 class _ResidentHomePageState extends State<ResidentHomePage> {
   final _supabase = Supabase.instance.client;
 
-  String _fullName  = '';
+  String _fullName = '';
   String _avatarUrl = '';
-  int    _apartment = 0;
+  int _apartment = 0;
+  String? _buildingId;
 
-  int    _mastersCount  = 0;
-  int    _activeVotes   = 0;
+  int _mastersCount = 0;
+  int _activeVotes = 0;
 
   List<Map<String, dynamic>> _announcements = [];
-  List<Map<String, dynamic>> _myOrders      = [];
+  List<Map<String, dynamic>> _myOrders = [];
   bool _isLoading = true;
 
   @override
@@ -41,6 +44,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
     try {
+      final context = await BuildingContextService.loadCurrent();
+      _buildingId = context?.buildingId;
       await Future.wait([
         _loadProfile(uid),
         _loadAnnouncements(),
@@ -63,27 +68,36 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .maybeSingle();
       if (p != null && mounted) {
         setState(() {
-          _fullName  = p['full_name']?.toString() ?? '';
+          _fullName = p['full_name']?.toString() ?? '';
           _avatarUrl = p['avatar_url']?.toString() ?? '';
           _apartment = (p['apartment_number'] as int?) ?? 0;
         });
       }
-    } catch (e) { debugPrint('loadProfile: $e'); }
+    } catch (e) {
+      debugPrint('loadProfile: $e');
+    }
   }
 
   Future<void> _loadAnnouncements() async {
     try {
+      if (_buildingId == null || _buildingId!.isEmpty) {
+        if (mounted) setState(() => _announcements = []);
+        return;
+      }
       final resp = await _supabase
           .from('announcements')
           .select('id, title, content, created_at, is_urgent')
+          .eq('building_id', _buildingId!)
           .order('is_urgent', ascending: false)
           .order('created_at', ascending: false)
           .limit(3);
       if (mounted) {
-        setState(() => _announcements =
-            List<Map<String, dynamic>>.from(resp as List));
+        setState(() =>
+            _announcements = List<Map<String, dynamic>>.from(resp as List));
       }
-    } catch (e) { debugPrint('loadAnn: $e'); }
+    } catch (e) {
+      debugPrint('loadAnn: $e');
+    }
   }
 
   Future<void> _loadMyOrders(String uid) async {
@@ -96,10 +110,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .order('created_at', ascending: false)
           .limit(5);
       if (mounted) {
-        setState(() => _myOrders =
-            List<Map<String, dynamic>>.from(resp as List));
+        setState(
+            () => _myOrders = List<Map<String, dynamic>>.from(resp as List));
       }
-    } catch (e) { debugPrint('loadOrders: $e'); }
+    } catch (e) {
+      debugPrint('loadOrders: $e');
+    }
   }
 
   // ── FIX: убрали FetchOptions(count:) — он не поддерживается в ───
@@ -114,18 +130,21 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       final votes = await _supabase
           .from('proposals')
           .select('id')
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .eq('building_id', _buildingId ?? '');
       if (mounted) {
         setState(() {
           _mastersCount = (masters as List).length;
-          _activeVotes  = (votes as List).length;
+          _activeVotes = (votes as List).length;
         });
       }
-    } catch (e) { debugPrint('loadStats: $e'); }
+    } catch (e) {
+      debugPrint('loadStats: $e');
+    }
   }
 
   String get _greeting {
-    final h    = DateTime.now().hour;
+    final h = DateTime.now().hour;
     final lang = appLanguage.value;
     if (h < 12) return lang == 'ru' ? 'Доброе утро' : 'Қайырлы таң';
     if (h < 17) return lang == 'ru' ? 'Добрый день' : 'Қайырлы күн';
@@ -134,9 +153,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark  = Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
-    final cardBg  = isDark ? const Color(0xFF1A1A1C) : Colors.white;
+    final cardBg = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
@@ -148,8 +167,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 onRefresh: _loadAll,
                 child: CustomScrollView(
                   slivers: [
-                    SliverToBoxAdapter(
-                        child: _buildHeader(lang, isDark)),
+                    SliverToBoxAdapter(child: _buildHeader(lang, isDark)),
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       sliver: SliverList(
@@ -164,10 +182,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                                   : 'Менің белсенді өтінімдерім',
                               LucideIcons.clipboardList,
                               lang == 'ru' ? 'Все' : 'Барлығы',
-                              () => Navigator.push(context,
+                              () => Navigator.push(
+                                  context,
                                   MaterialPageRoute(
-                                      builder: (_) =>
-                                          const OrdersPage())),
+                                      builder: (_) => const OrdersPage())),
                               isDark,
                             ),
                             const SizedBox(height: 10),
@@ -181,7 +199,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                                 : 'ЖК хабарландырулары',
                             LucideIcons.bell,
                             lang == 'ru' ? 'Все' : 'Барлығы',
-                            () => Navigator.push(context,
+                            () => Navigator.push(
+                                context,
                                 MaterialPageRoute(
                                     builder: (_) =>
                                         const AnnouncementsScreen())),
@@ -192,8 +211,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                               ? _buildNoAnn(lang, isDark, cardBg)
                               : Column(
                                   children: _announcements
-                                      .map((a) => _buildAnnCard(
-                                          a, isDark, cardBg))
+                                      .map((a) =>
+                                          _buildAnnCard(a, isDark, cardBg))
                                       .toList(),
                                 ),
                           const SizedBox(height: 24),
@@ -228,8 +247,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('$_greeting,',
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 14)),
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 14)),
                 Text(
                   firstName.isNotEmpty ? firstName : 'Житель',
                   style: const TextStyle(
@@ -241,16 +260,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                 if (_apartment > 0) ...[
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
                       '${lang == 'ru' ? 'Квартира' : 'Пәтер'} #$_apartment',
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 12),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ),
                 ],
@@ -260,13 +278,11 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           CircleAvatar(
             radius: 26,
             backgroundColor: Colors.white.withOpacity(0.2),
-            backgroundImage: _avatarUrl.isNotEmpty
-                ? NetworkImage(_avatarUrl) : null,
+            backgroundImage:
+                _avatarUrl.isNotEmpty ? NetworkImage(_avatarUrl) : null,
             child: _avatarUrl.isEmpty
                 ? Text(
-                    _fullName.isNotEmpty
-                        ? _fullName[0].toUpperCase()
-                        : '?',
+                    _fullName.isNotEmpty ? _fullName[0].toUpperCase() : '?',
                     style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -282,80 +298,83 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   Widget _buildQuickActions(String lang, bool isDark) {
     final actions = [
       (
-        icon : LucideIcons.users,
+        icon: LucideIcons.users,
         color: Colors.blueAccent,
         label: lang == 'ru' ? 'Найти\nмастера' : 'Шебер\nтабу',
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const MastersListScreen())),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const MastersListScreen())),
       ),
       (
-        icon : LucideIcons.plusCircle,
+        icon: LucideIcons.plusCircle,
         color: Colors.green,
         label: lang == 'ru' ? 'Создать\nзаявку' : 'Өтінім\nжасау',
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const CreateOrderPage())),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const CreateOrderPage())),
       ),
       (
-        icon : Icons.remove_red_eye_outlined,
+        icon: Icons.remove_red_eye_outlined,
         color: Colors.purple,
         label: lang == 'ru' ? 'Сканер\nнеис.' : 'Ақауды\nсканерлеу',
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const DefectScannerScreen())),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const DefectScannerScreen())),
       ),
       (
-        icon : LucideIcons.vote,
+        icon: LucideIcons.vote,
         color: Colors.orange,
         label: lang == 'ru' ? 'Голосо-\nвание' : 'Дауыс\nберу',
-        onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const OrdersPage())),
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const VotingListScreen())),
       ),
     ];
 
     return Row(
-      children: actions.map((a) => Expanded(
-        child: GestureDetector(
-          onTap: a.onTap,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: (a.color as Color).withOpacity(isDark ? 0.15 : 0.08),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                  color: (a.color as Color).withOpacity(0.25)),
-            ),
-            child: Column(
-              children: [
-                Icon(a.icon as IconData,
-                    color: a.color as Color, size: 22),
-                const SizedBox(height: 7),
-                Text(
-                  a.label as String,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: a.color as Color,
-                      height: 1.2),
+      children: actions
+          .map((a) => Expanded(
+                child: GestureDetector(
+                  onTap: a.onTap,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color:
+                          (a.color as Color).withOpacity(isDark ? 0.15 : 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: (a.color as Color).withOpacity(0.25)),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(a.icon as IconData,
+                            color: a.color as Color, size: 22),
+                        const SizedBox(height: 7),
+                        Text(
+                          a.label as String,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: a.color as Color,
+                              height: 1.2),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            ),
-          ),
-        ),
-      )).toList(),
+              ))
+          .toList(),
     );
   }
 
-  Widget _buildOrderChip(Map<String, dynamic> order, String lang,
-      bool isDark, Color cardBg) {
+  Widget _buildOrderChip(
+      Map<String, dynamic> order, String lang, bool isDark, Color cardBg) {
     final status = order['status']?.toString() ?? 'new';
-    final title  = order['title']?.toString() ?? '—';
-    final isIP   = status == 'in_progress';
-    final color  = isIP ? Colors.orange : Colors.blueAccent;
+    final title = order['title']?.toString() ?? '—';
+    final isIP = status == 'in_progress';
+    final color = isIP ? Colors.orange : Colors.blueAccent;
 
     return GestureDetector(
-      onTap: () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => const OrdersPage())),
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const OrdersPage())),
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -367,9 +386,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         child: Row(
           children: [
             Container(
-                width: 8, height: 8,
-                decoration: BoxDecoration(
-                    color: color, shape: BoxShape.circle)),
+                width: 8,
+                height: 8,
+                decoration:
+                    BoxDecoration(color: color, shape: BoxShape.circle)),
             const SizedBox(width: 12),
             Expanded(
               child: Text(title,
@@ -381,8 +401,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   overflow: TextOverflow.ellipsis),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10)),
@@ -391,9 +410,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     ? (lang == 'ru' ? 'В работе' : 'Жұмыста')
                     : (lang == 'ru' ? 'Новая' : 'Жаңа'),
                 style: TextStyle(
-                    color: color,
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold),
+                    color: color, fontSize: 10, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -402,14 +419,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget _buildAnnCard(
-      Map<String, dynamic> ann, bool isDark, Color cardBg) {
-    final title    = ann['title']?.toString() ?? '';
-    final content  = ann['content']?.toString() ?? '';
+  Widget _buildAnnCard(Map<String, dynamic> ann, bool isDark, Color cardBg) {
+    final title = ann['title']?.toString() ?? '';
+    final content = ann['content']?.toString() ?? '';
     final isUrgent = ann['is_urgent'] as bool? ?? false;
-    final date     =
-        DateTime.tryParse(ann['created_at']?.toString() ?? '') ??
-            DateTime.now();
+    final date = DateTime.tryParse(ann['created_at']?.toString() ?? '') ??
+        DateTime.now();
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
@@ -431,8 +446,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             children: [
               if (isUrgent) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 7, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                   decoration: BoxDecoration(
                     color: Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(6),
@@ -455,15 +470,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     overflow: TextOverflow.ellipsis),
               ),
               Text(DateFormat('dd.MM').format(date),
-                  style: const TextStyle(
-                      fontSize: 11, color: Colors.grey)),
+                  style: const TextStyle(fontSize: 11, color: Colors.grey)),
             ],
           ),
           if (content.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(content,
-                style:
-                    const TextStyle(fontSize: 12, color: Colors.grey),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis),
           ],
@@ -472,8 +485,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     );
   }
 
-  Widget _buildNoAnn(String lang, bool isDark, Color cardBg) =>
-      Container(
+  Widget _buildNoAnn(String lang, bool isDark, Color cardBg) => Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: cardBg,
@@ -496,17 +508,17 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
         ),
       );
 
-  Widget _buildStatsRow(String lang, bool isDark, Color cardBg) =>
-      Row(
+  Widget _buildStatsRow(String lang, bool isDark, Color cardBg) => Row(
         children: [
           _statCard(
             '$_mastersCount',
             lang == 'ru' ? 'Мастеров в базе' : 'Базадағы шебер',
             LucideIcons.hardHat,
             Colors.blueAccent,
-            isDark, cardBg,
-            () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => const MastersListScreen())),
+            isDark,
+            cardBg,
+            () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MastersListScreen())),
           ),
           const SizedBox(width: 12),
           _statCard(
@@ -514,14 +526,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             lang == 'ru' ? 'Голосований' : 'Дауыс беру',
             LucideIcons.vote,
             Colors.orange,
-            isDark, cardBg,
+            isDark,
+            cardBg,
             null,
           ),
         ],
       );
 
-  Widget _statCard(String value, String label, IconData icon,
-      Color color, bool isDark, Color cardBg, VoidCallback? onTap) =>
+  Widget _statCard(String value, String label, IconData icon, Color color,
+          bool isDark, Color cardBg, VoidCallback? onTap) =>
       Expanded(
         child: GestureDetector(
           onTap: onTap,
@@ -545,8 +558,8 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                             fontWeight: FontWeight.bold,
                             color: isDark ? Colors.white : Colors.black87)),
                     Text(label,
-                        style: const TextStyle(
-                            fontSize: 10, color: Colors.grey)),
+                        style:
+                            const TextStyle(fontSize: 10, color: Colors.grey)),
                   ],
                 ),
               ],
@@ -556,7 +569,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       );
 
   Widget _sectionHeader(String title, IconData icon, String action,
-      VoidCallback onTap, bool isDark) =>
+          VoidCallback onTap, bool isDark) =>
       Row(
         children: [
           Icon(icon, size: 16, color: Colors.blueAccent),

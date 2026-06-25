@@ -101,12 +101,15 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
     });
 
     try {
-      // ИСПРАВЛЕНИЕ: Сразу приводим результат к нужному типу YoloResult
-      final result = await YoloService.analyzeDefect(image) as YoloResult?;
-      
-      if (mounted && result != null) {
+      // YoloService.analyzeDefect теперь возвращает YoloResult напрямую —
+      // никакого приведения типов не требуется (раньше тут был каст
+      // `as YoloResult?`, который падал в рантайме, так как метод реально
+      // возвращал List<DefectDetection>).
+      final result = await YoloService.analyzeDefect(image);
+
+      if (mounted) {
         setState(() {
-          _detections = result.detections; // Убрали !, так как в модели это не null
+          _detections = result.detections;
           _masterCategory = result.masterCategory;
           _recommendationRu = result.recommendation;
         });
@@ -446,34 +449,7 @@ class _BBoxPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MODELS: Классы данных
+// MODELS: YoloResult и DefectDetection объявлены в services/yolo_service.dart
+// и импортированы выше — здесь больше не дублируются, чтобы избежать
+// конфликта двух несовместимых классов с одинаковым именем.
 // ─────────────────────────────────────────────────────────────────────────────
-
-class YoloResult {
-  final List<DefectDetection> detections;
-  final String? masterCategory;
-  final String? recommendation;
-
-  YoloResult({
-    required this.detections,
-    this.masterCategory,
-    this.recommendation,
-  });
-}
-
-class DefectDetection {
-  final String labelRu;
-  final double confidence;
-  final double x1, y1, x2, y2;
-  final int severityColor; 
-
-  DefectDetection({
-    required this.labelRu,
-    required this.confidence,
-    required this.x1,
-    required this.y1,
-    required this.x2,
-    required this.y2,
-    this.severityColor = 0xFF2196F3, 
-  });
-}
