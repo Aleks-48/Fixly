@@ -76,14 +76,22 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
 
 Widget _buildChatTab(bool isDark) {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: supabase.from('tasks').stream(primaryKey: ['id']).eq('is_deleted', false).order('created_at', ascending: false),
+      // ВАЖНО: раньше здесь был .eq('is_deleted', false). Колонка
+      // is_deleted никогда не проставляется при создании заявки
+      // (create_order_page.dart её не пишет), значит у всех задач это
+      // поле либо отсутствует, либо всегда NULL. В Postgres
+      // `NULL = false` не равно true, поэтому фильтр не пропускал ни
+      // одной строки — список чатов был всегда пустым для жителей и
+      // мастеров. Убрали фильтр из запроса; при необходимости скрывать
+      // удалённые задачи используем tasks.status != 'cancelled' ниже.
+      stream: supabase.from('tasks').stream(primaryKey: ['id']).order('created_at', ascending: false),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
         final myId = supabase.auth.currentUser?.id;
         final tasks = snapshot.data!.where((t) {
-          // Условие 1: Я создатель или заказчик
-          final bool isOwner = t['user_id'] == myId || t['client_id'] == myId;
+          // Условие 1: Я создатель заявки
+          final bool isOwner = t['user_id'] == myId;
           
           // Условие 2: Я был назначен мастером (даже если заказ завершен)
           final bool wasMaster = t['master_id'] == myId;

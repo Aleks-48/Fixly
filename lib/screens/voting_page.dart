@@ -1,22 +1,20 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:lucide_icons/lucide_icons.dart';
-import 'package:open_file/open_file.dart';
+import 'package:signature/signature.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fixly_app/main.dart'; 
 import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:signature/signature.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-
-import 'package:fixly_app/services/building_context_service.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Нужно для проверки на веб-сайт
 import 'package:fixly_app/services/voting_service.dart';
-
 class VotingPage extends StatefulWidget {
   final String proposalId;
   final String proposalTitle;
@@ -31,32 +29,28 @@ class VotingPage extends StatefulWidget {
   State<VotingPage> createState() => _VotingPageState();
 }
 
-class _VotingPageState extends State<VotingPage> {
-  final _sb = Supabase.instance.client;
-  late final SignatureController _signatureController;
+class _VotingPageState extends State<VotingPage> with TickerProviderStateMixin {
+  late SignatureController _signatureController;
   StreamSubscription<List<Map<String, dynamic>>>? _votesSubscription;
+  
+  bool _isUploading    = false;
+  bool _isChairman     = false;
+  bool _isLoadingRole  = true;
+  bool _hasVoted       = false;
+  bool _showVoteForm   = false; // Для председателя, чтобы вызвать форму голосования
 
-  BuildingContext? _context;
-  Map<String, dynamic>? _proposal;
-  bool _isLoading = true;
-  bool _isUploading = false;
-  bool _hasVoted = false;
-  String? _error;
   String? _voteSelection;
-
-  int _yesCount = 0;
-  int _noCount = 0;
-  int _abstainCount = 0;
-
-  String _buildingId = '';
-  String _buildingAddress = '';
-  String _osiName = 'ОСИ/НСУ';
-  int _totalApartments = 0;
+  late String _currentTitle;
   DateTime _votingStartDate = DateTime.now();
+
+  int _yesCount = 0, _noCount = 0, _abstainCount = 0;
+  String _buildingId = '', _buildingAddress = '', _osiName = '';
+  int _totalApartments = 0;
 
   @override
   void initState() {
     super.initState();
+    _currentTitle = widget.proposalTitle;
     _signatureController = SignatureController(
       penStrokeWidth: 3,
       penColor: Colors.blueAccent,
@@ -67,745 +61,401 @@ class _VotingPageState extends State<VotingPage> {
 
   @override
   void dispose() {
-    _votesSubscription?.cancel();
     _signatureController.dispose();
+    _votesSubscription?.cancel();
     super.dispose();
   }
 
-  String get _currentTitle =>
-      _proposal?['title']?.toString() ??
-      (widget.proposalTitle.isNotEmpty ? widget.proposalTitle : 'Голосование');
-
-  String get _status => _proposal?['status']?.toString() ?? 'active';
-  bool get _isActive => _status == 'active' || _proposal?['is_active'] == true;
-  bool get _canVote =>
-      !_hasVoted &&
-      _isActive &&
-      _context?.isVerifiedMember == true &&
-      _context?.hasBuilding == true &&
-      widget.proposalId.isNotEmpty;
-  bool get _canGenerateProtocol => _context?.canManageHouse == true;
-
   Future<void> _initializeData() async {
-    await _loadData();
+    await _checkUserRole();
     _setupRealtimeStats();
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    if (widget.proposalId.isEmpty) {
-      setState(() {
-        _error = 'Голосование не выбрано';
-        _isLoading = false;
-      });
-      return;
-    }
-
-    try {
-      final context = await BuildingContextService.loadCurrent();
-      final proposal = await _sb
-          .from('proposals')
-          .select()
-          .eq('id', widget.proposalId)
-          .maybeSingle();
-
-      if (proposal == null) {
-        if (mounted) {
-          setState(() {
-            _context = context;
-            _error = 'Голосование не найдено';
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
-      final proposalBuildingId = proposal['building_id']?.toString();
-      if (context?.buildingId != null &&
-          proposalBuildingId != null &&
-          proposalBuildingId != context!.buildingId) {
-        if (mounted) {
-          setState(() {
-            _context = context;
-            _error = 'Нет доступа к голосованию другого дома';
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
-      _buildingId = proposalBuildingId ?? context?.buildingId ?? '';
-      _buildingAddress = context?.buildingAddress ?? '';
-      _osiName = context?.osiName ?? 'ОСИ/НСУ';
-      _totalApartments = context?.totalApartments ?? 0;
-      _votingStartDate = DateTime.tryParse(
-            proposal['start_at']?.toString() ??
-                proposal['created_at']?.toString() ??
-                '',
-          ) ??
-          DateTime.now();
-
-      final hasVoted =
-          await VotingService.hasCurrentUserVoted(widget.proposalId);
-      if (mounted) {
-        setState(() {
-          _context = context;
-          _proposal = Map<String, dynamic>.from(proposal);
-          _hasVoted = hasVoted;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
+  // ── ЖИВАЯ СТАТИСТИКА ──────────────────────────────────────
   void _setupRealtimeStats() {
-    if (widget.proposalId.isEmpty) return;
-    _votesSubscription = _sb
+    _votesSubscription = Supabase.instance.client
         .from('votes')
         .stream(primaryKey: ['id'])
         .eq('proposal_id', widget.proposalId)
         .listen((data) {
-          var yes = 0;
-          var no = 0;
-          var abstain = 0;
-          for (final vote in data) {
-            final choice =
-                vote['choice']?.toString() ?? vote['decision']?.toString();
-            if (choice == 'yes') {
-              yes++;
-            } else if (choice == 'no') {
-              no++;
-            } else if (choice == 'abstain') {
-              abstain++;
-            }
-          }
-          if (mounted) {
-            setState(() {
-              _yesCount = yes;
-              _noCount = no;
-              _abstainCount = abstain;
-            });
-          }
+      int yes = 0, no = 0, abstain = 0;
+      for (final v in data) {
+        final c = v['choice'] as String? ?? '';
+        if (c == 'yes') yes++;
+        else if (c == 'no') no++;
+        else if (c == 'abstain') abstain++;
+      }
+      if (mounted) {
+        setState(() {
+          _yesCount = yes; _noCount = no; _abstainCount = abstain;
         });
+      }
+    });
   }
 
-  Future<void> _submitVote() async {
-    if (_voteSelection == null || _signatureController.isEmpty) {
-      _showSnackBar('Выберите вариант и поставьте подпись', Colors.orange);
-      return;
+  Future<void> _checkUserRole() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    final profile = await Supabase.instance.client.from('profiles').select().eq('id', user.id).maybeSingle();
+    final vote = await Supabase.instance.client.from('votes').select().eq('proposal_id', widget.proposalId).eq('user_id', user.id).maybeSingle();
+    
+    // Получаем детали ОСИ и здания
+    if (profile != null && profile['building_id'] != null) {
+      _buildingId = profile['building_id'];
+      final bdata = await Supabase.instance.client.from('buildings').select().eq('id', _buildingId).maybeSingle();
+      if (bdata != null) {
+        _buildingAddress = bdata['address'] ?? '';
+        _osiName = bdata['osi_name'] ?? 'ОСИ';
+        _totalApartments = bdata['total_apartments'] ?? 0;
+      }
     }
 
-    final signatureBytes = await _signatureController.toPngBytes();
-    if (signatureBytes == null || signatureBytes.isEmpty) {
-      _showSnackBar('Не удалось подготовить подпись', Colors.orange);
-      return;
-    }
-
-    setState(() => _isUploading = true);
-    try {
-      await VotingService.submitVote(
-        proposalId: widget.proposalId,
-        choice: _voteSelection!,
-        signatureBytes: signatureBytes,
-      );
-      if (!mounted) return;
-      setState(() {
-        _hasVoted = true;
-        _isUploading = false;
-      });
-      _signatureController.clear();
-      _showSnackBar('Голос засчитан', Colors.green);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isUploading = false);
-      final message = e.toString().toLowerCase().contains('duplicate')
-          ? 'Вы уже голосовали по этому вопросу'
-          : e.toString();
-      _showSnackBar(message, Colors.redAccent);
-    }
+    setState(() {
+      _isChairman = (profile?['role'] == 'osi' || profile?['role'] == 'chairman');
+      _hasVoted = vote != null;
+      _isLoadingRole = false;
+    });
   }
 
+  // ── СОЗДАНИЕ НОВОГО ГОЛОСОВАНИЯ (ДЛЯ ПРЕДСЕДАТЕЛЯ) ──────────
+  Future<void> _createNewProposal() async {
+    final titleCtrl = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(appLanguage.value == 'ru' ? "Новое голосование" : "Жаңа дауыс беру"),
+        content: TextField(controller: titleCtrl, decoration: const InputDecoration(hintText: "Тема вопроса")),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Отмена")),
+          ElevatedButton(
+            onPressed: () async {
+              if (titleCtrl.text.isEmpty) return;
+              try {
+                // ВАЖНО: раньше здесь был прямой insert без поля 'status'
+                // (и без end_at/quorum_rule). Голосования, созданные
+                // отсюда, никогда не появлялись в VotingListScreen и на
+                // дашборде председателя, потому что там фильтр строго
+                // .eq('status', 'active'). Теперь используем
+                // VotingService.createProposal — ту же точку создания,
+                // что и остальные экраны.
+                await VotingService.createProposal(title: titleCtrl.text);
+                if (ctx.mounted) Navigator.pop(ctx);
+                _showSnackBar("Голосование создано", Colors.green);
+              } catch (e) {
+                _showSnackBar("Ошибка: $e", Colors.red);
+              }
+            },
+            child: const Text("Создать"),
+          )
+        ],
+      ),
+    );
+  }
+
+  // ── ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ДОКУМЕНТА (PDF) ──────────────────
+  // ── ГЕНЕРАЦИЯ ОФИЦИАЛЬНОГО ДОКУМЕНТА (PDF) ──────────────────
   Future<void> _generateOfficialProtocol() async {
-    if (_buildingId.isEmpty) {
-      _showSnackBar('Дом не определен', Colors.orange);
-      return;
-    }
-
     setState(() => _isUploading = true);
     try {
-      final participants = await _loadParticipants();
-      final votes = await _sb
-          .from('votes')
-          .select()
-          .eq('proposal_id', widget.proposalId)
-          .eq('building_id', _buildingId);
-      final voteMap = {
-        for (final vote in votes as List) vote['user_id']?.toString(): vote,
-      };
+      final supabase = Supabase.instance.client;
+      final residents = await supabase.from('profiles').select().eq('building_id', _buildingId);
+      final votes = await supabase.from('votes').select().eq('proposal_id', widget.proposalId);
+      final Map voteMap = {for (var v in votes) v['user_id']: v};
 
       final pdf = pw.Document();
+      
+      // Загружаем шрифты с поддержкой кириллицы
       final font = await PdfGoogleFonts.robotoRegular();
       final bold = await PdfGoogleFonts.robotoBold();
 
-      pdf.addPage(
-        pw.MultiPage(
-          pageTheme: pw.PageTheme(
-            pageFormat: PdfPageFormat.a4,
-            theme: pw.ThemeData.withFont(base: font, bold: bold),
+      pdf.addPage(pw.MultiPage(
+        // ЭТО ИСПРАВЛЯЕТ "КВАДРАТЫ" - Применяем шрифт КО ВСЕМУ документу
+        pageTheme: pw.PageTheme(
+          theme: pw.ThemeData.withFont(
+            base: font,
+            bold: bold,
           ),
-          build: (ctx) => [
-            pw.Center(
-              child: pw.Text(
-                'ПРОТОКОЛ ОНЛАЙН-ГОЛОСОВАНИЯ СОБСТВЕННИКОВ',
-                style:
-                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14),
-              ),
-            ),
-            pw.SizedBox(height: 10),
-            pw.Text('ОСИ/НСУ: $_osiName',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-            pw.Text('Адрес: $_buildingAddress'),
-            pw.Text(
-                'Дата начала: ${DateFormat('dd.MM.yyyy HH:mm').format(_votingStartDate)}'),
-            pw.Text('Статус: ${_statusLabel(_status)}'),
-            pw.Divider(),
-            pw.Text(
-              'ВОПРОС: $_currentTitle',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            ),
-            pw.SizedBox(height: 12),
-            pw.Table(
-              border: pw.TableBorder.all(width: 0.5),
-              columnWidths: const {
-                0: pw.FixedColumnWidth(45),
-                1: pw.FlexColumnWidth(2),
-                2: pw.FixedColumnWidth(80),
-                3: pw.FixedColumnWidth(90),
-              },
-              children: [
-                pw.TableRow(
-                  decoration:
-                      const pw.BoxDecoration(color: PdfColor(0.93, 0.94, 0.96)),
-                  children: [
-                    _cell('Кв.', bold, isHeader: true),
-                    _cell('Собственник', bold, isHeader: true),
-                    _cell('Решение', bold, isHeader: true),
-                    _cell('Подпись', bold, isHeader: true),
-                  ],
-                ),
-                for (final person in participants)
-                  pw.TableRow(
-                    children: [
-                      _cell(person.apartmentNumber ?? '-', font),
-                      _cell(person.fullName ?? 'Не указано', font),
-                      _cell(
-                          _choiceLabel(
-                              voteMap[person.userId]?['choice']?.toString()),
-                          font),
-                      _cell(
-                          voteMap[person.userId] == null
-                              ? '-'
-                              : 'ЭЦП/моб. подпись',
-                          font),
-                    ],
-                  ),
-              ],
-            ),
-            pw.SizedBox(height: 16),
-            pw.Text(
-              'ИТОГИ: ЗА - $_yesCount, ПРОТИВ - $_noCount, ВОЗДЕРЖАЛИСЬ - $_abstainCount',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            ),
-            pw.Text(
-              'Явка: ${(_turnout * 100).toStringAsFixed(1)}%',
-              style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            ),
-          ],
         ),
-      );
+        pageFormat: PdfPageFormat.a4,
+        build: (ctx) => [
+          pw.Center(child: pw.Text("ПРОТОКОЛ ВНЕОЧЕРЕДНОГО СОБРАНИЯ СОБСТВЕННИКОВ", style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14))),
+          pw.SizedBox(height: 10),
+          pw.Text("ОСИ: $_osiName", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.Text("Адрес: $_buildingAddress"),
+          pw.Text("Дата начала: ${DateFormat('dd.MM.yyyy HH:mm').format(_votingStartDate)}"),
+          pw.Divider(),
+          pw.Text("ПОВЕСТКА ДНЯ: $_currentTitle", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 15),
+          pw.Table(
+            border: pw.TableBorder.all(),
+            children: [
+              pw.TableRow(children: [
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Кв.", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ФИО Собственника", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Решение", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+                pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Подпись", style: pw.TextStyle(fontWeight: pw.FontWeight.bold))),
+              ]),
+              for (var res in residents) 
+                pw.TableRow(children: [
+                  // Убираем null, если номер квартиры или имя пустые
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${res['apartment_number'] ?? res['apartment'] ?? '-_-'}")),
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${res['full_name'] ?? res['first_name'] ?? 'Не указано'}")),
+                  
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text(
+                    voteMap[res['id']]?['choice'] == 'yes' ? 'ЗА' : 
+                    voteMap[res['id']]?['choice'] == 'no' ? 'ПРОТИВ' : 
+                    voteMap[res['id']]?['choice'] == 'abstain' ? 'ВОЗД.' : 'Не голосовал'
+                  )),
+                  pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ЭЦП/Моб.")),
+                ]),
+            ],
+          ),
+          pw.SizedBox(height: 20),
+          pw.Text("ИТОГИ: ЗА - $_yesCount, ПРОТИВ - $_noCount, ВОЗДЕРЖАЛИСЬ - $_abstainCount", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+        ],
+      ));
 
       final bytes = await pdf.save();
-      final fileName =
-          'Protocol_${widget.proposalId}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final fileName = "Protocol_${DateTime.now().millisecondsSinceEpoch}.pdf";
 
+      // ЭТО ИСПРАВЛЯЕТ КРАСНУЮ ОШИБКУ НА САЙТЕ
       if (kIsWeb) {
+        // На вебе используем пакет printing для сохранения/просмотра
         await Printing.layoutPdf(
-          onLayout: (_) async => bytes,
+          onLayout: (PdfPageFormat format) async => bytes,
           name: fileName,
         );
       } else {
+        // На Android/iOS сохраняем во временную папку и открываем
         final output = await getTemporaryDirectory();
-        final file = File('${output.path}/$fileName');
+        final file = File("${output.path}/$fileName");
         await file.writeAsBytes(bytes);
         await OpenFile.open(file.path);
       }
+
     } catch (e) {
-      _showSnackBar('Ошибка PDF: $e', Colors.redAccent);
-      debugPrint('PDF Gen Error: $e');
+      _showSnackBar("Ошибка PDF: $e", Colors.red);
+      debugPrint("PDF Gen Error: $e");
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  pw.Widget _cell(String text, pw.Font font, {bool isHeader = false}) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.all(5),
-      child: pw.Text(
-        text,
-        style: pw.TextStyle(
-          font: font,
-          fontSize: 9,
-          fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
-  Future<List<_Participant>> _loadParticipants() async {
-    try {
-      final members = await _sb
-          .from('building_members')
-          .select('user_id, apartment_number')
-          .eq('building_id', _buildingId)
-          .inFilter('verification_status', ['verified', 'approved']);
-      final list = List<Map<String, dynamic>>.from(members as List);
-      final userIds = list
-          .map((m) => m['user_id']?.toString())
-          .whereType<String>()
-          .toList();
-      final names = <String, String>{};
-      if (userIds.isNotEmpty) {
-        final profiles = await _sb
-            .from('profiles')
-            .select('id, full_name, name, first_name, last_name')
-            .inFilter('id', userIds);
-        for (final profile in profiles as List) {
-          final row = Map<String, dynamic>.from(profile as Map);
-          final id = row['id']?.toString();
-          if (id != null) {
-            names[id] = row['full_name']?.toString() ??
-                row['name']?.toString() ??
-                [row['first_name'], row['last_name']]
-                    .where((p) => p != null && p.toString().isNotEmpty)
-                    .join(' ');
-          }
-        }
-      }
-      return list
-          .map(
-            (m) => _Participant(
-              userId: m['user_id']?.toString() ?? '',
-              apartmentNumber: m['apartment_number']?.toString(),
-              fullName: names[m['user_id']?.toString()],
-            ),
-          )
-          .where((p) => p.userId.isNotEmpty)
-          .toList();
-    } catch (_) {
-      final profiles = await _sb
-          .from('profiles')
-          .select(
-              'id, full_name, name, first_name, last_name, apartment_number, apartment')
-          .eq('building_id', _buildingId);
-      return (profiles as List)
-          .map((profile) {
-            final row = Map<String, dynamic>.from(profile as Map);
-            return _Participant(
-              userId: row['id']?.toString() ?? '',
-              apartmentNumber: row['apartment_number']?.toString() ??
-                  row['apartment']?.toString(),
-              fullName: row['full_name']?.toString() ??
-                  row['name']?.toString() ??
-                  [row['first_name'], row['last_name']]
-                      .where((p) => p != null && p.toString().isNotEmpty)
-                      .join(' '),
-            );
-          })
-          .where((p) => p.userId.isNotEmpty)
-          .toList();
-    }
-  }
-
-  double get _turnout {
-    final totalVotes = _yesCount + _noCount + _abstainCount;
-    final denominator = math.max(1, _totalApartments);
-    return totalVotes / denominator;
-  }
-
+  // ── UI СТРАНИЦЫ ───────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = isDark ? const Color(0xFF101214) : const Color(0xFFF6F7F9);
-    final card = isDark ? const Color(0xFF1B1F24) : Colors.white;
-
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_isLoadingRole) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: const Color(0xFF0A0E1A),
       appBar: AppBar(
-        backgroundColor: card,
-        elevation: 0,
-        title: Text(
-          _osiName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: isDark ? Colors.white : Colors.black87,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            if (_error != null)
-              _message(_error!, Colors.redAccent, card, isDark)
-            else ...[
-              _questionCard(card, isDark),
-              const SizedBox(height: 12),
-              _statsCard(card, isDark),
-              const SizedBox(height: 12),
-              if (_canVote)
-                _votingForm(card, isDark)
-              else
-                _message(
-                  _hasVoted
-                      ? 'Вы уже проголосовали по этому вопросу'
-                      : _isActive
-                          ? 'Голосование доступно только подтвержденным жильцам дома'
-                          : 'Голосование закрыто',
-                  _hasVoted ? Colors.green : Colors.orange,
-                  card,
-                  isDark,
-                ),
-              if (_canGenerateProtocol) ...[
-                const SizedBox(height: 18),
-                SizedBox(
-                  height: 52,
-                  child: OutlinedButton.icon(
-                    onPressed: _isUploading ? null : _generateOfficialProtocol,
-                    icon: const Icon(LucideIcons.fileText),
-                    label: const Text('Скачать протокол PDF'),
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _questionCard(Color card, bool isDark) {
-    final endAt = DateTime.tryParse(_proposal?['end_at']?.toString() ?? '');
-    return _card(
-      card,
-      isDark,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _statusPill(_status),
-              const Spacer(),
-              Text(
-                DateFormat('dd.MM.yyyy').format(_votingStartDate),
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _currentTitle,
-            style: TextStyle(
-              color: isDark ? Colors.white : Colors.black87,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          if ((_proposal?['description']?.toString() ?? '').isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              _proposal!['description'].toString(),
-              style: const TextStyle(color: Colors.grey, height: 1.35),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Icon(LucideIcons.mapPin, color: Colors.grey, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _buildingAddress.isEmpty
-                      ? 'Адрес дома не указан'
-                      : _buildingAddress,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-          if (endAt != null) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(LucideIcons.clock, color: Colors.grey, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  'Срок до ${DateFormat('dd.MM.yyyy HH:mm').format(endAt)}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ],
-            ),
-          ],
+        title: Text(_osiName),
+        actions: [
+          if (_isChairman)
+            IconButton(icon: const Icon(LucideIcons.plusCircle), onPressed: _createNewProposal)
         ],
       ),
-    );
-  }
-
-  Widget _statsCard(Color card, bool isDark) {
-    return _card(
-      card,
-      isDark,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(LucideIcons.activity, color: Colors.blueAccent, size: 18),
-              SizedBox(width: 8),
-              Text('Явка и решения',
-                  style: TextStyle(fontWeight: FontWeight.w800)),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _statCol('За', _yesCount, Colors.green),
-              _statCol('Против', _noCount, Colors.redAccent),
-              _statCol('Воздерж.', _abstainCount, Colors.orange),
-            ],
-          ),
-          const SizedBox(height: 14),
-          LinearProgressIndicator(
-            value: _turnout.clamp(0, 1),
-            backgroundColor: isDark ? Colors.white10 : const Color(0xFFE6E8EC),
-            color: Colors.blueAccent,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Проголосовало ${(_turnout * 100).toStringAsFixed(1)}% квартир',
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _votingForm(Color card, bool isDark) {
-    return _card(
-      card,
-      isDark,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Ваш голос',
-              style: TextStyle(fontWeight: FontWeight.w800)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _voteOption('yes', 'За', Colors.green),
-              const SizedBox(width: 8),
-              _voteOption('no', 'Против', Colors.redAccent),
-              const SizedBox(width: 8),
-              _voteOption('abstain', 'Воздерж.', Colors.orange),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const Text('Подпись',
-              style: TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 8),
-          Container(
-            height: 150,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE6E8EC)),
-            ),
-            child: Signature(
-              controller: _signatureController,
-              backgroundColor: Colors.transparent,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              TextButton.icon(
-                onPressed: _signatureController.clear,
-                icon: const Icon(LucideIcons.eraser, size: 16),
-                label: const Text('Очистить'),
-              ),
-              const Spacer(),
-              ElevatedButton.icon(
-                onPressed: _isUploading ? null : _submitVote,
-                icon:
-                    const Icon(LucideIcons.send, color: Colors.white, size: 16),
-                label: const Text('Отправить голос'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _card(Color card, bool isDark, {required Widget child}) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-              color: isDark ? Colors.white10 : const Color(0xFFE6E8EC)),
-        ),
-        child: child,
-      );
-
-  Widget _message(String text, Color color, Color card, bool isDark) => _card(
-        card,
-        isDark,
-        child: Row(
-          children: [
-            Icon(LucideIcons.info, color: color, size: 18),
-            const SizedBox(width: 10),
-            Expanded(child: Text(text, style: TextStyle(color: color))),
-          ],
-        ),
-      );
-
-  Widget _statCol(String label, int value, Color color) => Expanded(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Text(
-              value.toString(),
-              style: TextStyle(
-                  color: color, fontSize: 24, fontWeight: FontWeight.w800),
-            ),
-            Text(label,
-                style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            // Карточка вопроса
+            _card(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("ТЕКУЩИЙ ВОПРОС", style: TextStyle(color: Colors.blueAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    Text(DateFormat('dd.MM.yyyy').format(_votingStartDate), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(_currentTitle, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                const Divider(color: Colors.white10, height: 30),
+                Row(children: [
+                  const Icon(LucideIcons.mapPin, size: 14, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Text(_buildingAddress, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                ]),
+              ],
+            )),
+
+            const SizedBox(height: 20),
+
+            // Статистика (всегда видна председателю)
+            _buildLiveStats(),
+
+            const SizedBox(height: 20),
+
+            // Интерфейс голосования
+            if (!_hasVoted || _showVoteForm) 
+              _buildVotingForm()
+            else
+              _card(child: const Row(
+                children: [
+                  Icon(LucideIcons.checkCircle, color: Colors.green),
+                  SizedBox(width: 15),
+                  Text("Вы уже проголосовали", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ],
+              )),
+            
+            if (_isChairman && !_showVoteForm && !_hasVoted)
+              Padding(
+                padding: const EdgeInsets.only(top: 15),
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _showVoteForm = true),
+                  icon: const Icon(LucideIcons.userCheck),
+                  label: const Text("Проголосовать как житель"),
+                ),
+              ),
+
+            if (_isChairman) 
+              Padding(
+                padding: const EdgeInsets.only(top: 30),
+                child: _actionButton(
+                  "СКАЧАТЬ АРХИВ / ПРОТОКОЛ", 
+                  LucideIcons.fileText, 
+                  _generateOfficialProtocol,
+                  color: Colors.white10
+                ),
+              ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildLiveStats() {
+    return _card(child: Column(
+      children: [
+        const Row(children: [
+          Icon(LucideIcons.activity, color: Colors.blueAccent, size: 18),
+          SizedBox(width: 10),
+          Text("LIVE СТАТИСТИКА", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ]),
+        const SizedBox(height: 20),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _statCol("ЗА", _yesCount, Colors.green),
+            _statCol("ПРОТИВ", _noCount, Colors.red),
+            _statCol("ВОЗД.", _abstainCount, Colors.orange),
+          ],
+        ),
+        const SizedBox(height: 20),
+        LinearProgressIndicator(
+          value: (_yesCount + _noCount + _abstainCount) / math.max(1, _totalApartments),
+          backgroundColor: Colors.white10,
+          color: Colors.blueAccent,
+        ),
+        const SizedBox(height: 10),
+        Text("Проголосовало ${(((_yesCount + _noCount + _abstainCount) / math.max(1, _totalApartments)) * 100).toStringAsFixed(1)}% квартир", 
+          style: const TextStyle(color: Colors.grey, fontSize: 12)),
+      ],
+    ));
+  }
+
+  Widget _buildVotingForm() {
+    return Column(
+      children: [
+        Row(children: [
+          _voteOption("yes", "ЗА", Colors.green),
+          const SizedBox(width: 10),
+          _voteOption("no", "ПРОТИВ", Colors.red),
+        ]),
+        const SizedBox(height: 20),
+        const Text("ВАША ПОДПИСЬ", style: TextStyle(color: Colors.grey, fontSize: 12)),
+        const SizedBox(height: 10),
+        Container(
+          height: 150,
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+          child: Signature(controller: _signatureController, backgroundColor: Colors.transparent),
+        ),
+        const SizedBox(height: 20),
+        _actionButton("ОТПРАВИТЬ ГОЛОС", LucideIcons.send, _submitVote),
+      ],
+    );
+  }
+
+  Future<void> _submitVote() async {
+    if (_voteSelection == null || _signatureController.isEmpty) {
+      _showSnackBar("Выберите вариант и подпишите", Colors.orange);
+      return;
+    }
+    setState(() => _isUploading = true);
+
+    try {
+      // Раньше здесь была заглушка с Future.delayed — голос нигде не
+      // сохранялся, хотя UI показывал "Голос засчитан!". Теперь реально
+      // пишем голос и подпись через VotingService (Storage + таблица votes).
+      final Uint8List? sigBytes = await _signatureController.toPngBytes();
+      if (sigBytes == null) {
+        throw StateError('Не удалось получить изображение подписи');
+      }
+
+      await VotingService.submitVote(
+        proposalId: widget.proposalId,
+        choice: _voteSelection!,
+        signatureBytes: sigBytes,
       );
 
+      if (mounted) {
+        setState(() {
+          _hasVoted = true;
+          _showVoteForm = false;
+        });
+        _showSnackBar("Голос засчитан!", Colors.green);
+      }
+    } catch (e) {
+      debugPrint('submitVote error: $e');
+      _showSnackBar("Ошибка отправки голоса: $e", Colors.red);
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  // Вспомогательные виджеты
+  Widget _card({required Widget child}) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(color: const Color(0xFF161B2E), borderRadius: BorderRadius.circular(24)),
+    child: child,
+  );
+
+  Widget _statCol(String label, int val, Color color) => Column(
+    children: [
+      Text(val.toString(), style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.bold)),
+      Text(label, style: const TextStyle(color: Colors.grey, fontSize: 10)),
+    ],
+  );
+
   Widget _voteOption(String key, String label, Color color) {
-    final selected = _voteSelection == key;
-    return Expanded(
-      child: InkWell(
-        onTap: () => setState(() => _voteSelection = key),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          height: 48,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected ? color : color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.5)),
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: selected ? Colors.white : color,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-            ),
-          ),
+    bool sel = _voteSelection == key;
+    return Expanded(child: GestureDetector(
+      onTap: () => setState(() => _voteSelection = key),
+      child: Container(
+        height: 60,
+        decoration: BoxDecoration(
+          color: sel ? color : color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.5)),
         ),
+        child: Center(child: Text(label, style: TextStyle(color: sel ? Colors.white : color, fontWeight: FontWeight.bold))),
       ),
-    );
+    ));
   }
 
-  Widget _statusPill(String status) {
-    final color = status == 'closed'
-        ? Colors.grey
-        : status == 'draft'
-            ? Colors.orange
-            : Colors.green;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        _statusLabel(status),
-        style:
-            TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11),
-      ),
-    );
+  Widget _actionButton(String title, IconData icon, VoidCallback tap, {Color color = Colors.blueAccent}) => 
+    SizedBox(width: double.infinity, height: 55, child: ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(backgroundColor: color, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+      onPressed: _isUploading ? null : tap,
+      icon: Icon(icon, color: Colors.white),
+      label: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+    ));
+
+  void _showSnackBar(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: color));
   }
-
-  String _statusLabel(String status) {
-    switch (status) {
-      case 'draft':
-        return 'Черновик';
-      case 'closed':
-        return 'Закрыто';
-      case 'archived':
-        return 'Архив';
-      default:
-        return 'Активно';
-    }
-  }
-
-  String _choiceLabel(String? choice) {
-    switch (choice) {
-      case 'yes':
-        return 'ЗА';
-      case 'no':
-        return 'ПРОТИВ';
-      case 'abstain':
-        return 'ВОЗДЕРЖ.';
-      default:
-        return 'Не голосовал';
-    }
-  }
-
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
-    );
-  }
-}
-
-class _Participant {
-  const _Participant({
-    required this.userId,
-    this.apartmentNumber,
-    this.fullName,
-  });
-
-  final String userId;
-  final String? apartmentNumber;
-  final String? fullName;
 }

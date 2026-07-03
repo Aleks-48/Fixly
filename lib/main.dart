@@ -5,8 +5,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/date_symbol_data_local.dart';
 
 import 'package:fixly_app/theme_notifier.dart';
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/screens/login_page.dart';
 import 'package:fixly_app/screens/register_page.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
@@ -65,6 +67,11 @@ void main() async {
         appLanguage.value = savedLang;
       }
     }),
+    // ВАЖНО: без этого announcements_screen.dart падал с LocaleDataException
+    // при каждом открытии деталей объявления — там используется
+    // DateFormat('dd MMMM yyyy, HH:mm', 'ru') с явной русской локалью,
+    // а данные локали intl нигде не инициализировались.
+    initializeDateFormatting('ru'),
   ]);
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -94,17 +101,16 @@ class MyApp extends StatelessWidget {
       title: 'Fixly',
       debugShowCheckedModeBanner: false,
       themeMode: themeNotifier.themeMode,
-      theme: ThemeData(
-        useMaterial3: true, 
-        brightness: Brightness.light, 
-        colorSchemeSeed: Colors.blue,
-        fontFamily: 'Inter', // Если добавишь шрифты позже
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true, 
-        brightness: Brightness.dark, 
-        colorSchemeSeed: Colors.blue,
-      ),
+      // ВАЖНО: раньше здесь была generic inline ThemeData
+      // (colorSchemeSeed: Colors.blue), а вся дизайн-система из
+      // theme/app_theme.dart (AppColors, кастомные InputDecorationTheme,
+      // BottomNavigationBarTheme, ElevatedButtonTheme и т.д. — тёмная
+      // навигационная палитра #0A0D1A/#141B2D/#2196F3) никогда не
+      // подключалась к MaterialApp и просто не работала нигде в
+      // приложении, кроме мест, где AppColors.of(context) вызывался
+      // напрямую в обход системы тем Flutter.
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
       initialRoute: '/',
       onGenerateRoute: (settings) {
         Widget page;

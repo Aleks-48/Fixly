@@ -85,8 +85,11 @@ class _MastersListScreenState extends State<MastersListScreen> {
       // 1. Инициализация и выбор полей (используем var для PostgrestFilterBuilder)
       var query = _supabase
           .from('profiles')
+          // ВАЖНО: раньше здесь не было поля 'phone'. MasterDetailPage
+          // читает widget.masterData['phone'] для кнопки звонка — без
+          // этого поля кнопка "Позвонить" молча ничего не делала.
           .select('id, full_name, specialty, avatar_url, rating, reviews_count, '
-              'price_from, experience_years, is_verified, is_available, description');
+              'price_from, experience_years, phone, is_verified, is_available, description');
 
       // 2. Базовые фильтры (обязательные)
       query = query.eq('role', 'master').eq('is_verified', true);

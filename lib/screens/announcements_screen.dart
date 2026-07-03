@@ -13,14 +13,13 @@ class AnnouncementsScreen extends StatefulWidget {
 }
 
 class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
-  final _supabase = Supabase.instance.client;
+  final _supabase   = Supabase.instance.client;
   final _searchCtrl = TextEditingController();
 
-  List<Map<String, dynamic>> _all = [];
+  List<Map<String, dynamic>> _all      = [];
   List<Map<String, dynamic>> _filtered = [];
-  bool _isLoading = true;
+  bool _isLoading  = true;
   bool _isChairman = false;
-  String? _buildingId;
 
   // Отдельные каналы для insert/delete (нет .all в 2.x)
   RealtimeChannel? _insertChannel;
@@ -43,13 +42,21 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   }
 
   Future<void> _checkRole() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return;
     try {
-      final context = await BuildingContextService.loadCurrent();
+      final p = await _supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', uid)
+          .maybeSingle();
       if (mounted) {
-        setState(() {
-          _isChairman = context?.canManageHouse == true;
-          _buildingId = context?.buildingId;
-        });
+        // Регистрация (register_page.dart) сохраняет роль председателя как
+        // 'osi', а не 'chairman'. Раньше проверялось только 'chairman',
+        // из-за чего председатели с ролью 'osi' не видели кнопку создания
+        // и удаления объявлений.
+        final role = p?['role']?.toString();
+        setState(() => _isChairman = role == 'chairman' || role == 'osi');
       }
     } catch (_) {}
   }
@@ -57,36 +64,29 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   Future<void> _loadAnnouncements() async {
     setState(() => _isLoading = true);
     try {
-      final context = await BuildingContextService.loadCurrent();
-      final buildingId = context?.buildingId;
-      if (mounted) {
-        setState(() {
-          _isChairman = context?.canManageHouse == true;
-          _buildingId = buildingId;
-        });
-      }
-      if (buildingId == null || buildingId.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _all = [];
-            _filtered = [];
-            _isLoading = false;
-          });
-        }
-        return;
+      // ВАЖНО: раньше здесь не было фильтра по дому — все жители и
+      // мастера видели ВСЕ объявления из ВСЕХ ЖК в системе (в том числе
+      // "срочные"), хотя при создании объявление привязывается к
+      // конкретному building_id (main_wrapper.dart,
+      // create_announcement_screen.dart). Это утечка данных между домами:
+      // житель дома А видел уведомления, адресованные дому Б.
+      final buildingId = await BuildingContextService.currentBuildingId();
+
+      var query = _supabase
+          .from('announcements')
+          .select('id, title, content, author_id, is_urgent, created_at');
+
+      if (buildingId != null && buildingId.isNotEmpty) {
+        query = query.eq('building_id', buildingId);
       }
 
-      final resp = await _supabase
-          .from('announcements')
-          .select(
-              'id, title, content, author_id, building_id, is_urgent, created_at')
-          .eq('building_id', buildingId)
+      final resp = await query
           .order('is_urgent', ascending: false)
           .order('created_at', ascending: false);
       if (mounted) {
         final list = List<Map<String, dynamic>>.from(resp as List);
         setState(() {
-          _all = list;
+          _all      = list;
           _filtered = list;
           _isLoading = false;
         });
@@ -103,9 +103,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     _insertChannel = _supabase
         .channel('ann_insert')
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'announcements',
+          event   : PostgresChangeEvent.insert,
+          schema  : 'public',
+          table   : 'announcements',
           callback: (_) => _loadAnnouncements(),
         )
         .subscribe();
@@ -114,9 +114,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     _deleteChannel = _supabase
         .channel('ann_delete')
         .onPostgresChanges(
-          event: PostgresChangeEvent.delete,
-          schema: 'public',
-          table: 'announcements',
+          event   : PostgresChangeEvent.delete,
+          schema  : 'public',
+          table   : 'announcements',
           callback: (_) => _loadAnnouncements(),
         )
         .subscribe();
@@ -137,11 +137,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
 
   // ── СОЗДАТЬ ───────────────────────────────────────────────
   Future<void> _create() async {
-    final lang = appLanguage.value;
+    final lang   = appLanguage.value;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final titleCtrl = TextEditingController();
+    final titleCtrl   = TextEditingController();
     final contentCtrl = TextEditingController();
-    bool isUrgent = false;
+    bool  isUrgent    = false;
 
     await showModalBottomSheet(
       context: context,
@@ -153,9 +153,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         builder: (ctx, setM) => Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 20,
-            right: 20,
-            top: 20,
+            left: 20, right: 20, top: 20,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -163,8 +161,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             children: [
               Center(
                 child: Container(
-                    width: 40,
-                    height: 4,
+                    width: 40, height: 4,
                     decoration: BoxDecoration(
                         color: Colors.grey.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(2))),
@@ -181,14 +178,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               _field(titleCtrl, lang == 'ru' ? 'Заголовок *' : 'Тақырып *',
                   LucideIcons.type, isDark),
               const SizedBox(height: 12),
-              _field(contentCtrl, lang == 'ru' ? 'Текст...' : 'Мәтін...',
+              _field(contentCtrl,
+                  lang == 'ru' ? 'Текст...' : 'Мәтін...',
                   LucideIcons.alignLeft, isDark,
                   maxLines: 5),
               const SizedBox(height: 10),
               Row(
                 children: [
                   Switch(
-                    value: isUrgent,
+                    value    : isUrgent,
                     onChanged: (v) => setM(() => isUrgent = v),
                     activeColor: Colors.red,
                   ),
@@ -202,8 +200,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               ),
               const SizedBox(height: 14),
               SizedBox(
-                width: double.infinity,
-                height: 50,
+                width: double.infinity, height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blueAccent,
@@ -214,15 +211,20 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   onPressed: () async {
                     if (titleCtrl.text.trim().isEmpty) return;
                     try {
-                      if (_buildingId == null || _buildingId!.isEmpty) {
-                        throw StateError('Дом не выбран');
-                      }
+                      // ВАЖНО: раньше объявление создавалось без
+                      // building_id вообще. Теперь, когда чтение
+                      // объявлений фильтруется по дому (см.
+                      // _loadAnnouncements), объявление без building_id
+                      // просто не попадёт ни в чью ленту — нужно
+                      // проставлять его при создании.
+                      final buildingId =
+                          await BuildingContextService.currentBuildingId();
                       await _supabase.from('announcements').insert({
-                        'title': titleCtrl.text.trim(),
-                        'content': contentCtrl.text.trim(),
+                        'title'    : titleCtrl.text.trim(),
+                        'content'  : contentCtrl.text.trim(),
                         'author_id': _supabase.auth.currentUser?.id,
-                        'building_id': _buildingId,
                         'is_urgent': isUrgent,
+                        'building_id': buildingId,
                         'created_at': DateTime.now().toIso8601String(),
                       });
                       if (ctx.mounted) Navigator.pop(ctx);
@@ -276,9 +278,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   // ── BUILD ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark  = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
-    final cardBg = isDark ? const Color(0xFF1A1A1C) : Colors.white;
+    final cardBg  = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
@@ -312,9 +314,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
               child: TextField(
                 controller: _searchCtrl,
                 onChanged: _applySearch,
-                style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+                style: TextStyle(
+                    color: isDark ? Colors.white : Colors.black87),
                 decoration: InputDecoration(
-                  hintText: lang == 'ru' ? 'Поиск...' : 'Іздеу...',
+                  hintText:
+                      lang == 'ru' ? 'Поиск...' : 'Іздеу...',
                   hintStyle: const TextStyle(color: Colors.grey),
                   prefixIcon: const Icon(LucideIcons.search, size: 18),
                   suffixIcon: _searchCtrl.text.isNotEmpty
@@ -332,8 +336,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
                 ),
               ),
             ),
@@ -347,10 +351,11 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       : RefreshIndicator(
                           onRefresh: _loadAnnouncements,
                           child: ListView.builder(
-                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                            padding: const EdgeInsets.fromLTRB(
+                                16, 4, 16, 80),
                             itemCount: _filtered.length,
-                            itemBuilder: (_, i) =>
-                                _buildCard(_filtered[i], lang, isDark, cardBg),
+                            itemBuilder: (_, i) => _buildCard(
+                                _filtered[i], lang, isDark, cardBg),
                           ),
                         ),
             ),
@@ -360,14 +365,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     );
   }
 
-  Widget _buildCard(
-      Map<String, dynamic> ann, String lang, bool isDark, Color cardBg) {
-    final id = ann['id']?.toString() ?? '';
-    final title = ann['title']?.toString() ?? '';
-    final content = ann['content']?.toString() ?? '';
+  Widget _buildCard(Map<String, dynamic> ann, String lang,
+      bool isDark, Color cardBg) {
+    final id       = ann['id']?.toString() ?? '';
+    final title    = ann['title']?.toString() ?? '';
+    final content  = ann['content']?.toString() ?? '';
     final isUrgent = ann['is_urgent'] as bool? ?? false;
-    final date = DateTime.tryParse(ann['created_at']?.toString() ?? '') ??
-        DateTime.now();
+    final date     =
+        DateTime.tryParse(ann['created_at']?.toString() ?? '') ??
+            DateTime.now();
 
     return GestureDetector(
       onTap: () => _showDetail(ann, lang, isDark, cardBg),
@@ -399,7 +405,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    isUrgent ? LucideIcons.alertTriangle : LucideIcons.bell,
+                    isUrgent
+                        ? LucideIcons.alertTriangle
+                        : LucideIcons.bell,
                     color: isUrgent ? Colors.red : Colors.blueAccent,
                     size: 18,
                   ),
@@ -444,7 +452,9 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                         const SizedBox(height: 4),
                         Text(content,
                             style: const TextStyle(
-                                fontSize: 13, color: Colors.grey, height: 1.4),
+                                fontSize: 13,
+                                color: Colors.grey,
+                                height: 1.4),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis),
                       ],
@@ -457,8 +467,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                         color: Colors.red, size: 18),
                     onPressed: () => _delete(id),
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                    constraints: const BoxConstraints(
+                        minWidth: 32, minHeight: 32),
                   ),
               ],
             ),
@@ -466,11 +476,13 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             Row(
               children: [
                 const Spacer(),
-                const Icon(LucideIcons.clock, size: 12, color: Colors.grey),
+                const Icon(LucideIcons.clock,
+                    size: 12, color: Colors.grey),
                 const SizedBox(width: 4),
                 Text(
                   DateFormat('dd MMM, HH:mm').format(date.toLocal()),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: const TextStyle(
+                      fontSize: 11, color: Colors.grey),
                 ),
               ],
             ),
@@ -480,12 +492,13 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     );
   }
 
-  void _showDetail(
-      Map<String, dynamic> ann, String lang, bool isDark, Color cardBg) {
-    final title = ann['title']?.toString() ?? '';
+  void _showDetail(Map<String, dynamic> ann, String lang,
+      bool isDark, Color cardBg) {
+    final title   = ann['title']?.toString() ?? '';
     final content = ann['content']?.toString() ?? '';
-    final date = DateTime.tryParse(ann['created_at']?.toString() ?? '') ??
-        DateTime.now();
+    final date    =
+        DateTime.tryParse(ann['created_at']?.toString() ?? '') ??
+            DateTime.now();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -505,8 +518,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             children: [
               Center(
                 child: Container(
-                    width: 40,
-                    height: 4,
+                    width: 40, height: 4,
                     decoration: BoxDecoration(
                         color: Colors.grey.withOpacity(0.3),
                         borderRadius: BorderRadius.circular(2))),
@@ -519,8 +531,10 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                       color: isDark ? Colors.white : Colors.black87)),
               const SizedBox(height: 8),
               Text(
-                DateFormat('dd MMMM yyyy, HH:mm', 'ru').format(date.toLocal()),
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
+                DateFormat('dd MMMM yyyy, HH:mm', 'ru')
+                    .format(date.toLocal()),
+                style: const TextStyle(
+                    color: Colors.grey, fontSize: 12),
               ),
               const Divider(height: 24),
               Text(content,
@@ -545,28 +559,34 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 size: 60, color: Colors.grey.withOpacity(0.3)),
             const SizedBox(height: 16),
             Text(
-              lang == 'ru' ? 'Объявлений нет' : 'Хабарландырулар жоқ',
+              lang == 'ru'
+                  ? 'Объявлений нет'
+                  : 'Хабарландырулар жоқ',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 15),
+              style:
+                  const TextStyle(color: Colors.grey, fontSize: 15),
             ),
           ],
         ),
       );
 
-  Widget _field(
-      TextEditingController ctrl, String hint, IconData icon, bool isDark,
+  Widget _field(TextEditingController ctrl, String hint,
+      IconData icon, bool isDark,
       {int maxLines = 1}) {
     return TextField(
       controller: ctrl,
       maxLines: maxLines,
       style: TextStyle(
-          color: isDark ? Colors.white : Colors.black87, fontSize: 14),
+          color: isDark ? Colors.white : Colors.black87,
+          fontSize: 14),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+        hintStyle:
+            const TextStyle(color: Colors.grey, fontSize: 13),
         prefixIcon: Icon(icon, color: Colors.blueAccent, size: 18),
         filled: true,
-        fillColor: isDark ? Colors.white10 : Colors.grey.shade50,
+        fillColor:
+            isDark ? Colors.white10 : Colors.grey.shade50,
         border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none),

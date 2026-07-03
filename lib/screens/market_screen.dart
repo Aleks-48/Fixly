@@ -42,7 +42,8 @@ class _MarketScreenState extends State<MarketScreen> {
     try {
       final resp = await _supabase
           .from('profiles')
-          .select('id, full_name, specialty, avatar_url, rating, reviews_count, price_from, is_verified, is_available, description, experience_years')
+          // Раньше без 'phone' — кнопка звонка на MasterDetailPage не работала.
+          .select('id, full_name, specialty, avatar_url, rating, reviews_count, price_from, phone, is_verified, is_available, description, experience_years')
           .eq('role', 'master')
           .eq('is_verified', true)
           .eq('specialty', spec)

@@ -33,7 +33,7 @@ class UserModel {
     this.reviewsCount = 0,
     this.isVerified = false,
     this.isAvailable = true,
-    this.apartmentNumber, required firstName, required lastName, required String bin,
+    this.apartmentNumber,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map) {
@@ -53,7 +53,7 @@ class UserModel {
       reviewsCount    : (map['reviews_count'] as int?)            ?? 0,
       isVerified      : map['is_verified'] as bool?               ?? false,
       isAvailable     : map['is_available'] as bool?              ?? true,
-      apartmentNumber : map['apartment_number'] as int?, firstName: null, lastName: null, bin: '',
+      apartmentNumber : map['apartment_number'] as int?,
     );
   }
 
@@ -83,8 +83,4 @@ class UserModel {
     if (fullName.isNotEmpty) return fullName[0].toUpperCase();
     return '?';
   }
-
-  get firstName => null;
-
-  get lastName => null;
 }

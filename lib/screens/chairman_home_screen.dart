@@ -10,7 +10,8 @@ import 'package:fixly_app/screens/orders_page.dart';
 import 'package:fixly_app/screens/voting_page.dart';
 import 'package:fixly_app/services/building_context_service.dart';
 import 'package:fixly_app/services/voting_service.dart';
-
+import 'package:fixly_app/screens/voting_list_screen.dart';
+import 'package:fixly_app/screens/create_announcement_screen.dart';
 class ChairmanHomeScreen extends StatefulWidget {
   const ChairmanHomeScreen({super.key});
 
@@ -59,33 +60,68 @@ class _ChairmanHomeScreenState extends State<ChairmanHomeScreen> {
       }
 
       final buildingId = context.buildingId!;
-      final tasksResp = await _sb
-          .from('tasks')
-          .select()
-          .eq('building_id', buildingId)
-          .order('created_at', ascending: false)
-          .limit(20);
-      final proposalsResp = await _sb
-          .from('proposals')
-          .select()
-          .eq('building_id', buildingId)
-          .eq('status', 'active')
-          .order('created_at', ascending: false)
-          .limit(5);
-      final announcementsResp = await _sb
-          .from('announcements')
-          .select()
-          .eq('building_id', buildingId)
-          .order('created_at', ascending: false)
-          .limit(5);
+
+      // ВАЖНО: раньше все три запроса (tasks/proposals/announcements)
+      // шли последовательно в одном try — если хотя бы один падал
+      // (например, proposals.building_id не существовала в реальной
+      // схеме БД), это: 1) обнуляло уже успешно загруженные данные
+      // (tasks мог загрузиться нормально, но так и не попадал в setState),
+      // 2) _context никогда не устанавливался, из-за чего на экране
+      // одновременно показывались два противоречащих друг другу
+      // сообщения — "Нет привязки к дому" и текст Postgres-ошибки.
+      // Теперь каждый запрос обёрнут отдельно: одна сломанная таблица
+      // не рушит весь дашборд, а частичные ошибки собираются и
+      // показываются одним понятным баннером.
+      final errors = <String>[];
+
+      List<Map<String, dynamic>> tasks = [];
+      try {
+        final tasksResp = await _sb
+            .from('tasks')
+            .select()
+            .eq('building_id', buildingId)
+            .order('created_at', ascending: false)
+            .limit(20);
+        tasks = List<Map<String, dynamic>>.from(tasksResp as List);
+      } catch (e) {
+        errors.add('Заявки: $e');
+      }
+
+      List<Map<String, dynamic>> proposals = [];
+      try {
+        final proposalsResp = await _sb
+            .from('proposals')
+            .select()
+            .eq('building_id', buildingId)
+            .eq('status', 'active')
+            .order('created_at', ascending: false)
+            .limit(5);
+        proposals = List<Map<String, dynamic>>.from(proposalsResp as List);
+      } catch (e) {
+        errors.add('Голосования: $e');
+      }
+
+      List<Map<String, dynamic>> announcements = [];
+      try {
+        final announcementsResp = await _sb
+            .from('announcements')
+            .select()
+            .eq('building_id', buildingId)
+            .order('created_at', ascending: false)
+            .limit(5);
+        announcements =
+            List<Map<String, dynamic>>.from(announcementsResp as List);
+      } catch (e) {
+        errors.add('Объявления: $e');
+      }
 
       if (mounted) {
         setState(() {
           _context = context;
-          _tasks = List<Map<String, dynamic>>.from(tasksResp as List);
-          _proposals = List<Map<String, dynamic>>.from(proposalsResp as List);
-          _announcements =
-              List<Map<String, dynamic>>.from(announcementsResp as List);
+          _tasks = tasks;
+          _proposals = proposals;
+          _announcements = announcements;
+          _error = errors.isEmpty ? null : errors.join('\n');
           _isLoading = false;
         });
       }
@@ -251,26 +287,33 @@ class _ChairmanHomeScreenState extends State<ChairmanHomeScreen> {
     );
   }
 
-  Widget _buildKpiGrid(Color card, bool isDark) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.95,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      children: [
-        _kpi('Заявки', '$_activeTasks', LucideIcons.clipboardList,
-            Colors.blueAccent, card, isDark),
-        _kpi('Критично', '$_criticalTasks', LucideIcons.alertTriangle,
-            Colors.redAccent, card, isDark),
-        _kpi('Голосования', '${_proposals.length}', LucideIcons.vote,
+Widget _buildKpiGrid(Color card, bool isDark) {
+  return GridView.count(
+    crossAxisCount: 2,
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    childAspectRatio: 1.95,
+    crossAxisSpacing: 8,
+    mainAxisSpacing: 8,
+    children: [
+      _kpi('Заявки', '$_activeTasks', LucideIcons.clipboardList,
+          Colors.blueAccent, card, isDark),
+      _kpi('Критично', '$_criticalTasks', LucideIcons.alertTriangle,
+          Colors.redAccent, card, isDark),
+      
+      // Обернули в GestureDetector для быстрого перехода к списку
+      GestureDetector(
+        onTap: () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const VotingListScreen())),
+        child: _kpi('Голосования', '${_proposals.length}', LucideIcons.vote,
             Colors.green, card, isDark),
-        _kpi('Финансы', '${_money.format(_spent.round())} ₸',
-            LucideIcons.wallet, Colors.orange, card, isDark),
-      ],
-    );
-  }
+      ),
+      
+      _kpi('Финансы', '${_money.format(_spent.round())} ₸',
+          LucideIcons.wallet, Colors.orange, card, isDark),
+    ],
+  );
+}
 
   Widget _kpi(
     String label,
@@ -316,29 +359,38 @@ class _ChairmanHomeScreenState extends State<ChairmanHomeScreen> {
     );
   }
 
-  Widget _buildQuickActions(Color card, bool isDark) {
-    final actions = [
-      _QuickAction(
-          'Заявка',
-          LucideIcons.wrench,
-          Colors.blueAccent,
-          () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const CreateOrderPage()))),
-      _QuickAction(
-          'Объявление',
-          LucideIcons.megaphone,
-          Colors.orange,
-          () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const AnnouncementsScreen()))),
-      _QuickAction(
-          'Голосование', LucideIcons.vote, Colors.green, _showProposalDialog),
-      _QuickAction(
-          'Документ',
-          LucideIcons.fileText,
-          Colors.indigo,
-          () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const DocumentsScreen()))),
-    ];
+Widget _buildQuickActions(Color card, bool isDark) {
+  final actions = [
+    _QuickAction(
+        'Заявка',
+        LucideIcons.wrench,
+        Colors.blueAccent,
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const CreateOrderPage()))),
+    _QuickAction(
+        'Объявление',
+        LucideIcons.megaphone,
+        Colors.orange,
+        // Восстановлен путь: ведем сразу на форму создания объявления
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const CreateAnnouncementScreen()))),
+    _QuickAction(
+        'Голосование', 
+        LucideIcons.vote, 
+        Colors.green, 
+        // Восстановлен путь: открываем полноценный менеджер голосований с FAB-кнопкой "Создать"
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const VotingListScreen()))),
+    _QuickAction(
+        'Документ',
+        LucideIcons.fileText,
+        Colors.indigo,
+        () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const DocumentsScreen()))),
+  ];
+
+  // ... остальная часть метода _buildQuickActions остается без изменений
+
 
     return Container(
       padding: const EdgeInsets.all(12),

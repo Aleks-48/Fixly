@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+import 'package:fixly_app/screens/main_wrapper.dart';
 
 class OsiSelectionScreen extends StatefulWidget {
   const OsiSelectionScreen({super.key});
@@ -100,8 +101,17 @@ class _OsiSelectionScreenState extends State<OsiSelectionScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Вы успешно привязаны к дому!"), backgroundColor: Colors.green)
           );
-          // Здесь можно сделать переход на Главный экран (HomePage)
-          Navigator.pop(context); 
+          // ВАЖНО: раньше здесь был Navigator.pop(context). Но
+          // register_page.dart открывает OsiSelectionScreen через
+          // pushAndRemoveUntil(..., (_) => false), который полностью
+          // очищает стек навигации — под этим экраном ничего нет, и pop
+          // не срабатывал. Пользователь застревал на этом экране навсегда
+          // после успешной привязки к дому. Теперь ведём его дальше в
+          // приложение через pushReplacement на MainWrapper.
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const MainWrapper()),
+          );
         }
       }
     } catch (e) {

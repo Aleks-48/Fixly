@@ -13,6 +13,7 @@ class TaskModel {
   final String? imageUrl;
   final double  price;
   final double? finalPrice;
+  final String  residentPhone; // телефон жильца, оставившего заявку
   final DateTime createdAt;
 
   const TaskModel({
@@ -29,6 +30,7 @@ class TaskModel {
     this.imageUrl,
     this.price = 0.0,
     this.finalPrice,
+    this.residentPhone = '',
     required this.createdAt,
   });
 
@@ -47,11 +49,19 @@ class TaskModel {
       imageUrl   : (map['image_url'] ?? map['image'])?.toString(),
       price      : (map['price'] as num?)?.toDouble()       ?? 0.0,
       finalPrice : (map['final_price'] as num?)?.toDouble(),
+      residentPhone: (map['resident_phone'] ?? map['customer_phone'])?.toString() ?? '',
       createdAt  : map['created_at'] != null
           ? DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
     );
   }
+
+  /// Раньше это была пустая заглушка (`static Object? fromJson(...) {}`),
+  /// которая всегда возвращала null. Из-за этого в home_page.dart список
+  /// задач после `.whereType<TaskModel>()` всегда оказывался пустым, а
+  /// статистика "Новые/В работе/Готово" всегда показывала 0/0/0.
+  /// Теперь это просто алиас на fromMap.
+  factory TaskModel.fromJson(Map<String, dynamic> d) => TaskModel.fromMap(d);
 
   Map<String, dynamic> toMap() => {
     'title'      : title,
@@ -66,6 +76,7 @@ class TaskModel {
     if (apartment  != null) 'apartment'  : apartment,
     if (imageUrl   != null) 'image_url'  : imageUrl,
     if (finalPrice != null) 'final_price': finalPrice,
+    if (residentPhone.isNotEmpty) 'resident_phone': residentPhone,
   };
 
   TaskModel copyWith({String? status, String? masterId, double? finalPrice}) =>
@@ -77,6 +88,7 @@ class TaskModel {
         category  : category,  address    : address,
         apartment : apartment, imageUrl   : imageUrl,
         price     : price,     finalPrice : finalPrice ?? this.finalPrice,
+        residentPhone: residentPhone,
         createdAt : createdAt,
       );
 
@@ -84,8 +96,4 @@ class TaskModel {
   bool get isInProgress => status == 'in_progress';
   bool get isCompleted  => status == 'completed';
   bool get isCancelled  => status == 'cancelled';
-
-  get residentPhone => null;
-
-  static Object? fromJson(Map<String, dynamic> d) {}
 }

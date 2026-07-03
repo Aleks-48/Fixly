@@ -101,10 +101,8 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
     });
 
     try {
-      // YoloService.analyzeDefect теперь возвращает YoloResult напрямую —
-      // никакого приведения типов не требуется (раньше тут был каст
-      // `as YoloResult?`, который падал в рантайме, так как метод реально
-      // возвращал List<DefectDetection>).
+      // analyzeDefect теперь возвращает строго типизированный YoloResult
+      // (раньше была заглушка + ненадёжный `as YoloResult?`).
       final result = await YoloService.analyzeDefect(image);
 
       if (mounted) {
@@ -448,8 +446,7 @@ class _BBoxPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MODELS: YoloResult и DefectDetection объявлены в services/yolo_service.dart
-// и импортированы выше — здесь больше не дублируются, чтобы избежать
-// конфликта двух несовместимых классов с одинаковым именем.
-// ─────────────────────────────────────────────────────────────────────────────
+// YoloResult и DefectDetection теперь определены в yolo_service.dart
+// (импортирован выше) — раньше здесь были дублирующие локальные классы
+// с другим набором полей, из-за чего analyzeDefect() и этот экран были
+// несовместимы по типам и приходилось делать ненадёжный `as YoloResult?`.

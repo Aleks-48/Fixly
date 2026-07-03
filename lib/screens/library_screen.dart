@@ -66,7 +66,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final p = await _supabase
           .from('profiles').select('role').eq('id', uid).maybeSingle();
-      if (mounted) setState(() => _isChairman = p?['role'] == 'chairman');
+      if (mounted) {
+        // Та же проблема, что и в announcements_screen.dart: председатель
+        // может иметь роль 'osi' (так пишет register_page.dart), а не
+        // только 'chairman'.
+        final role = p?['role']?.toString();
+        setState(() => _isChairman = role == 'chairman' || role == 'osi');
+      }
     } catch (_) {}
   }
 

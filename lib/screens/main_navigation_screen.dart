@@ -1,37 +1,16 @@
-// lib/screens/main_navigation_screen.dart
-//
-// Главный навигационный каркас приложения после редизайна.
-// • Bottom navigation: 4 таба, зависят от роли
-// • Центральный FAB — создание заявки (resident / chairman)
-// • Председатель (chairman/manager/admin) дополнительно получает
-//   выезжающий Drawer с градиентом: Голосование, Документы,
-//   Аналитика, База знаний
-//
-// Роль определяется через BuildingContextService (тот же источник
-// правды, что и в main_wrapper.dart), чтобы не плодить рассинхрон
-// между двумя навигационными обёртками.
-
-import 'package:fixly_app/screens/profile/chairman_Analytics_Screen.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-
-import 'package:fixly_app/main.dart';
-import 'package:fixly_app/theme/app_theme.dart';
-import 'package:fixly_app/services/building_context_service.dart';
-
-import 'package:fixly_app/screens/chairman_home_screen.dart';
-import 'package:fixly_app/screens/resident_home_page.dart';
-import 'package:fixly_app/screens/orders_page.dart';
-import 'package:fixly_app/screens/income_screen.dart';
-import 'package:fixly_app/screens/masters_list_screen.dart';
-import 'package:fixly_app/screens/chat_list_screen.dart';
-import 'package:fixly_app/screens/profile_page.dart';
-import 'package:fixly_app/screens/voting_list_screen.dart';
-import 'package:fixly_app/screens/documents_screen.dart';
-import 'package:fixly_app/screens/library_screen.dart';
-import 'package:fixly_app/screens/announcements_screen.dart';
-import 'package:fixly_app/screens/create_order_page.dart';
-import 'package:fixly_app/screens/my_work_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:fixly_app/main.dart'; // Доступ к appLanguage
+import 'package:fixly_app/utils/app_texts.dart'; // Доступ к AppTexts
+import 'orders_page.dart';
+import 'chat_list_screen.dart';
+import 'profile_page.dart';
+import 'create_order_page.dart';
+import 'my_work_screen.dart';
+import 'documents_screen.dart';
+import 'resident_home_page.dart'; // Новый импорт для жителя
+import 'package:fixly_app/core/sheber_ata_helper.dart'; 
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -42,381 +21,197 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  String _userRole = 'resident'; // По умолчанию ставим resident
   bool _isLoading = true;
-  BuildingContext? _context;
-
-  final _scaffoldKey = GlobalKey<ScaffoldState>();
-
-  bool get _isHouseManager =>
-      _context?.role == FixlyRole.chairman ||
-      _context?.role == FixlyRole.manager ||
-      _context?.role == FixlyRole.admin;
-
-  bool get _isMaster => _context?.role == FixlyRole.master;
-  bool get _isResident => !_isHouseManager && !_isMaster;
 
   @override
   void initState() {
     super.initState();
-    _loadRole();
+    _fetchUserRole();
   }
 
-  Future<void> _loadRole() async {
+  Future<void> _fetchUserRole() async {
     try {
-      final context = await BuildingContextService.loadCurrent();
-      if (mounted) {
-        setState(() {
-          _context = context;
-          userRole.value = context?.roleKey ?? 'resident';
-          _isLoading = false;
-        });
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        final data = await Supabase.instance.client
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+        
+        if (mounted) {
+          setState(() {
+            _userRole = data['role'] ?? 'resident'; 
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
-      debugPrint('MainNavigationScreen role load: $e');
+      debugPrint('Ошибка при получении роли: $e');
       if (mounted) {
-        setState(() {
-          userRole.value = 'resident';
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
     }
-  }
-
-  // ── СТРАНИЦЫ ПО РОЛЯМ ────────────────────────────────────
-  List<Widget> get _pages {
-    if (_isHouseManager) {
-      return const [
-        ChairmanHomeScreen(),
-        OrdersPage(),
-        ChatListScreen(),
-        ProfilePage(),
-      ];
-    }
-    if (_isMaster) {
-      return const [
-        OrdersPage(),
-        IncomeScreen(),
-        ChatListScreen(),
-        ProfilePage(),
-      ];
-    }
-    return const [
-      ResidentHomePage(),
-      MastersListScreen(),
-      ChatListScreen(),
-      ProfilePage(),
-    ];
-  }
-
-  List<_NavItem> get _navItems {
-    final lang = appLanguage.value;
-    if (_isHouseManager) {
-      return [
-        _NavItem(LucideIcons.home, lang == 'ru' ? 'Дом' : 'Үй'),
-        _NavItem(LucideIcons.clipboardList, lang == 'ru' ? 'Заявки' : 'Өтінімдер'),
-        _NavItem(LucideIcons.messageCircle, lang == 'ru' ? 'Чаты' : 'Чаттар'),
-        _NavItem(LucideIcons.user, lang == 'ru' ? 'Профиль' : 'Профиль'),
-      ];
-    }
-    if (_isMaster) {
-      return [
-        _NavItem(LucideIcons.clipboardList, lang == 'ru' ? 'Заявки' : 'Тапсырыстар'),
-        _NavItem(LucideIcons.wallet, lang == 'ru' ? 'Доход' : 'Табыс'),
-        _NavItem(LucideIcons.messageCircle, lang == 'ru' ? 'Чаты' : 'Чаттар'),
-        _NavItem(LucideIcons.user, lang == 'ru' ? 'Профиль' : 'Профиль'),
-      ];
-    }
-    return [
-      _NavItem(LucideIcons.home, lang == 'ru' ? 'Главная' : 'Басты бет'),
-      _NavItem(LucideIcons.hardHat, lang == 'ru' ? 'Мастера' : 'Шеберлер'),
-      _NavItem(LucideIcons.messageCircle, lang == 'ru' ? 'Чаты' : 'Чаттар'),
-      _NavItem(LucideIcons.user, lang == 'ru' ? 'Профиль' : 'Профиль'),
-    ];
-  }
-
-  // ── FAB: создание заявки доступно жителю и председателю ─
-  bool get _showFab => _isResident || _isHouseManager;
-
-  void _openCreateOrder() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CreateOrderPage()),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: c.background,
-        body: Center(child: CircularProgressIndicator(color: c.primary)),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
       );
     }
 
-    final pages = _pages;
-    final items = _navItems;
-    final index = _currentIndex.clamp(0, pages.length - 1);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // ЛОГИКА СТРАНИЦ В ЗАВИСИМОСТИ ОТ РОЛИ
+    final List<Widget> pages = [
+      // 0: Главная / Заявки
+      _userRole == 'resident' ? const ResidentHomePage() : const OrdersPage(),
+      
+      // 1: Чаты
+      const ChatListScreen(),
+      
+      // 2: Документы / Работа / Мой дом
+      _userRole == 'osi' 
+          ? const DocumentsScreen() 
+          : (_userRole == 'resident' ? const DocumentsScreen() : const MyWorkScreen()), // Для жителя пока оставим документы или спец. экран
+          
+      // 3: Профиль
+      const ProfilePage(),
+    ];
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
-      builder: (context, lang, _) {
+      builder: (context, lang, child) {
         return Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: c.background,
           extendBody: true,
-          drawer: _isHouseManager ? _ChairmanDrawer(colors: c, lang: lang) : null,
-          appBar: _isHouseManager
-              ? AppBar(
-                  backgroundColor: c.surface,
-                  elevation: 0,
-                  leading: IconButton(
-                    icon: Icon(LucideIcons.menu, color: c.textPrimary),
-                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          body: SizedBox(
+            width: double.infinity,
+            height: double.infinity,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: IndexedStack(
+                    index: _currentIndex,
+                    children: pages,
                   ),
-                  title: Text(
-                    'Fixly',
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontWeight: FontWeight.w800,
+                ),
+                Positioned(
+                  bottom: 110, 
+                  right: 20,
+                  child: SheberAtaHelper(
+                    messages: const {
+                      'kk': 'Сәлеметсіз бе! Тұрғын ретінде көмек керек пе?',
+                      'ru': 'Привет! Нужна помощь как жителю?',
+                    },
+                    onTap: () => debugPrint("Шебер-Ата на связи с жителем!"), 
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Кнопка "+" только для ОСИ и Жителя (Житель может подать заявку)
+          floatingActionButton: (_userRole == 'osi' || _userRole == 'resident')
+            ? FloatingActionButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CreateOrderPage(initialCategory: '', masterId:'', masterName:'', prefillDescription: '',)),
+                  );
+                },
+                backgroundColor: Colors.blueAccent,
+                shape: const CircleBorder(),
+                elevation: 8,
+                child: const Icon(LucideIcons.plus, color: Colors.white, size: 35),
+              )
+            : null,
+
+          floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+
+          bottomNavigationBar: BottomAppBar(
+            color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+            // Вырез под кнопку, если роль позволяет
+            shape: (_userRole == 'osi' || _userRole == 'resident') ? const CircularNotchedRectangle() : null,
+            notchMargin: 10.0,
+            child: SizedBox(
+              height: 65,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildNavItem(
+                      icon: _userRole == 'resident' ? LucideIcons.home : (_userRole == 'osi' ? LucideIcons.clipboardList : LucideIcons.briefcase), 
+                      label: _userRole == 'resident' ? (lang == 'ru' ? 'Главная' : 'Басты бет') : (_userRole == 'osi' ? AppTexts.get('orders', lang) : AppTexts.get('exchange', lang)), 
+                      index: 0
                     ),
                   ),
-                )
-              : null,
-          body: IndexedStack(index: index, children: pages),
-          floatingActionButton: _showFab
-              ? FloatingActionButton(
-                  onPressed: _openCreateOrder,
-                  backgroundColor: c.primary,
-                  shape: const CircleBorder(),
-                  elevation: 6,
-                  child: const Icon(LucideIcons.plus, color: Colors.white, size: 30),
-                )
-              : null,
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-          bottomNavigationBar: _buildBottomBar(c, items, index),
+                  Expanded(
+                    child: _buildNavItem(
+                      icon: LucideIcons.messageCircle, 
+                      label: AppTexts.get('chats', lang), 
+                      index: 1
+                    ),
+                  ),
+                  
+                  // Отступ под кнопку "+"
+                  (_userRole == 'osi' || _userRole == 'resident')
+                    ? const SizedBox(width: 48) 
+                    : const SizedBox(width: 10), 
+
+                  Expanded(
+                    child: _buildNavItem(
+                      icon: _userRole == 'resident' ? LucideIcons.building : (_userRole == 'osi' ? LucideIcons.fileText : LucideIcons.layoutGrid), 
+                      label: _userRole == 'resident' ? (lang == 'ru' ? 'Мой дом' : 'Менің үйім') : (_userRole == 'osi' ? AppTexts.get('documents', lang) : (lang == 'ru' ? 'Мои дела' : 'Менің істерім')), 
+                      index: 2
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildNavItem(
+                      icon: LucideIcons.user, 
+                      label: AppTexts.get('profile', lang), 
+                      index: 3
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );
   }
 
-  /// Bottom bar с вырезом под центральный FAB.
-  /// Пункты делятся поровну: первая половина слева от выреза,
-  /// вторая — справа. При нечётном количестве лишний пункт уходит влево.
-  Widget _buildBottomBar(AppColors c, List<_NavItem> items, int index) {
-    final leftCount = _showFab ? (items.length / 2).ceil() : items.length;
-    final leftItems = items.sublist(0, leftCount);
-    final rightItems = items.sublist(leftCount);
-
-    Widget tileFor(_NavItem item) {
-      final i = items.indexOf(item);
-      return Expanded(child: _navTile(c, item, i, index));
-    }
-
-    return BottomAppBar(
-      color: c.surface,
-      shape: _showFab ? const CircularNotchedRectangle() : null,
-      notchMargin: 10,
-      child: SizedBox(
-        height: 64,
-        child: Row(
-          children: [
-            ...leftItems.map(tileFor),
-            if (_showFab) const SizedBox(width: 48),
-            ...rightItems.map(tileFor),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _navTile(AppColors c, _NavItem item, int i, int currentIndex) {
-    final selected = currentIndex == i;
-    final color = selected ? c.primary : c.textTertiary;
+  Widget _buildNavItem({required IconData icon, required String label, required int index}) {
+    final isSelected = _currentIndex == index;
     return InkWell(
-      onTap: () => setState(() => _currentIndex = i),
+      onTap: () => setState(() => _currentIndex = index),
       highlightColor: Colors.transparent,
       splashColor: Colors.transparent,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(item.icon, color: color, size: 23),
+          Icon(
+            icon,
+            color: isSelected ? Colors.blueAccent : Colors.grey,
+            size: 24,
+          ),
           const SizedBox(height: 4),
           Text(
-            item.label,
+            label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: color,
+              color: isSelected ? Colors.blueAccent : Colors.grey,
               fontSize: 10,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),
         ],
       ),
     );
-  }
-}
-
-class _NavItem {
-  const _NavItem(this.icon, this.label);
-  final IconData icon;
-  final String label;
-}
-
-// ============================================================
-//  DRAWER ПРЕДСЕДАТЕЛЯ — синий градиент, доп. разделы управления
-// ============================================================
-class _ChairmanDrawer extends StatelessWidget {
-  const _ChairmanDrawer({required this.colors, required this.lang});
-
-  final AppColors colors;
-  final String lang;
-
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      backgroundColor: colors.surface,
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 8),
-            _drawerTile(
-              context,
-              icon: LucideIcons.vote,
-              label: lang == 'ru' ? 'Голосование' : 'Дауыс беру',
-              color: colors.success,
-              onTap: () => _push(context, const VotingListScreen()),
-            ),
-            _drawerTile(
-              context,
-              icon: LucideIcons.fileText,
-              label: lang == 'ru' ? 'Документы' : 'Құжаттар',
-              color: colors.info,
-              onTap: () => _push(context, const DocumentsScreen()),
-            ),
-            _drawerTile(
-              context,
-              icon: LucideIcons.barChart3,
-              label: lang == 'ru' ? 'Аналитика' : 'Аналитика',
-              color: colors.secondary,
-              onTap: () => _push(context, const ChairmanAnalyticsScreen()),
-            ),
-            _drawerTile(
-              context,
-              icon: LucideIcons.library,
-              label: lang == 'ru' ? 'База знаний' : 'Білім қоры',
-              color: colors.warning,
-              onTap: () => _push(context, const LibraryScreen()),
-            ),
-            const Divider(height: 24),
-            _drawerTile(
-              context,
-              icon: LucideIcons.megaphone,
-              label: lang == 'ru' ? 'Объявления' : 'Хабарландырулар',
-              color: colors.danger,
-              onTap: () => _push(context, const AnnouncementsScreen()),
-            ),
-            _drawerTile(
-              context,
-              icon: LucideIcons.briefcase,
-              label: lang == 'ru' ? 'Мои дела' : 'Менің істерім',
-              color: colors.textSecondary,
-              onTap: () => _push(context, const MyWorkScreen()),
-            ),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Text(
-                'Fixly · ОСИ/НСУ',
-                style: TextStyle(color: colors.textTertiary, fontSize: 11),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [colors.gradientStart, colors.gradientEnd],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(LucideIcons.building2, color: Colors.white, size: 26),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            lang == 'ru' ? 'Панель председателя' : 'Төраға панелі',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            lang == 'ru' ? 'Управление домом и ОСИ' : 'Үй және МТБ басқару',
-            style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _drawerTile(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, color: color, size: 19),
-      ),
-      title: Text(
-        label,
-        style: TextStyle(
-          color: colors.textPrimary,
-          fontWeight: FontWeight.w600,
-          fontSize: 14,
-        ),
-      ),
-      onTap: () {
-        Navigator.pop(context); // закрыть drawer
-        onTap();
-      },
-    );
-  }
-
-  void _push(BuildContext context, Widget page) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
   }
 }

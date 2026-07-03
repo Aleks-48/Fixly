@@ -3,52 +3,50 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart'; // Предполагается, что здесь лежит appLanguage
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/services/pdf_report_service.dart';
-import 'package:fixly_app/services/ai_service.dart';
-import 'package:fixly_app/services/building_context_service.dart';
-import 'package:printing/printing.dart';
+import 'package:fixly_app/services/ai_service.dart'; 
+import 'package:printing/printing.dart'; 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:fixly_app/services/building_context_service.dart';
 
 class ChairmanAnalyticsScreen extends StatefulWidget {
   const ChairmanAnalyticsScreen({super.key});
 
   @override
-  State<ChairmanAnalyticsScreen> createState() =>
-      _ChairmanAnalyticsScreenState();
+  State<ChairmanAnalyticsScreen> createState() => _ChairmanAnalyticsScreenState();
 }
 
 class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   // --- 1. ФИНАНСОВЫЕ ПОКАЗАТЕЛИ ---
-  double _eosiBalance = 2450000; // Текущий счет (ЕОСИ)
-  double _capitalBalance = 5800000; // Кап. ремонт
-
+  double _eosiBalance = 2450000;      // Текущий счет (ЕОСИ)
+  double _capitalBalance = 5800000;   // Кап. ремонт
+  
   final TextEditingController _balanceController = TextEditingController();
   final TextEditingController _capitalController = TextEditingController();
   final TextEditingController _manualStatController = TextEditingController();
 
   bool _isGeneratingPdf = false;
   bool _isAiLoading = false;
-  String _aiForecastText = "";
-  List<Map<String, dynamic>> _aiPriorityTasks = [];
-  String? _buildingId;
-
+  String _aiForecastText = ""; 
+  List<Map<String, dynamic>> _aiPriorityTasks = []; 
+  
   // --- 2. ДАННЫЕ РЫНКА (ФАКТОР НДС 16% И РК 2025) ---
   final Map<String, Map<String, dynamic>> _marketStats = {
     'utilities': {
-      'trend': 0.18,
-      'label': 'Тарифы ЖКХ (РК)',
+      'trend': 0.18, 
+      'label': 'Тарифы ЖКХ (РК)', 
       'info': 'Программа "Тариф в обмен на инвестиции"',
       'color': Colors.redAccent
     },
     'materials': {
-      'trend': 0.16,
-      'label': 'Стройматериалы',
+      'trend': 0.16, 
+      'label': 'Стройматериалы', 
       'info': 'Учет планируемого НДС 16% в 2025 году',
       'color': Colors.orangeAccent
     },
     'services': {
-      'trend': 0.14,
-      'label': 'Сервисные услуги',
+      'trend': 0.14, 
+      'label': 'Сервисные услуги', 
       'info': 'Подорожание из-за роста МРП и налогов',
       'color': Colors.blueAccent
     },
@@ -77,21 +75,14 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
     try {
       final supabase = Supabase.instance.client;
-      final buildingContext = await BuildingContextService.loadCurrent();
-      _buildingId = buildingContext?.buildingId;
-
+      
       // Получаем историю последних выполненных задач
-      dynamic query = supabase
+      final List<Map<String, dynamic>> lastTasks = await supabase
           .from('tasks')
           .select()
           .eq('status', 'completed')
-          .order('created_at', ascending: false);
-      if (_buildingId != null && _buildingId!.isNotEmpty) {
-        query = query.eq('building_id', _buildingId!);
-      }
-      final response = await query.limit(15);
-      final List<Map<String, dynamic>> lastTasks =
-          List<Map<String, dynamic>>.from(response as List);
+          .order('created_at', ascending: false)
+          .limit(15);
 
       String marketContext = """
       ВНИМАНИЕ: Экономика Казахстана 2025. 
@@ -106,7 +97,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         capitalRepairAccount: _capitalBalance,
         lang: appLanguage.value,
         recentExpenses: lastTasks,
-        marketContext: marketContext,
+        marketContext: marketContext, 
       );
 
       if (mounted) {
@@ -130,17 +121,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     setState(() {
       _aiPriorityTasks = [
         {
-          'title': appLanguage.value == 'ru'
-              ? 'Срочный закуп (до роста НДС)'
-              : 'Материалдарды жедел сатып алу',
+          'title': appLanguage.value == 'ru' ? 'Срочный закуп (до роста НДС)' : 'Материалдарды жедел сатып алу',
           'importance': 'Critical',
           'cost': '600 000 ₸',
           'icon': LucideIcons.alertTriangle
         },
         {
-          'title': appLanguage.value == 'ru'
-              ? 'Ревизия системы отопления'
-              : 'Жылу жүйесін тексеру',
+          'title': appLanguage.value == 'ru' ? 'Ревизия системы отопления' : 'Жылу жүйесін тексеру',
           'importance': 'High',
           'cost': '180 000 ₸',
           'icon': LucideIcons.thermometer
@@ -156,15 +143,14 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title:
-            Text(lang == 'ru' ? "Факторы рынка РК" : "РК нарықтық факторлары"),
+        title: Text(lang == 'ru' ? "Факторы рынка РК" : "РК нарықтық факторлары"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              lang == 'ru'
-                  ? "Введите изменения (например: рост цен на лифты +20%)"
-                  : "Өзгерістерді енгізіңіз (мыс: лифт бағасы +20%)",
+              lang == 'ru' 
+                ? "Введите изменения (например: рост цен на лифты +20%)" 
+                : "Өзгерістерді енгізіңіз (мыс: лифт бағасы +20%)",
               style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 12),
@@ -174,27 +160,22 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               decoration: InputDecoration(
                 filled: true,
                 fillColor: Colors.grey.withOpacity(0.05),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                 hintText: lang == 'ru' ? "НДС 16%, инфляция..." : "ҚҚС 16%...",
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(lang == 'ru' ? "Закрыть" : "Жабу")),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(lang == 'ru' ? "Закрыть" : "Жабу")),
           ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _fetchAiAnalysis();
-              },
-              style: ElevatedButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12))),
-              child: Text(lang == 'ru' ? "Обновить" : "Жаңарту")),
+            onPressed: () {
+              Navigator.pop(context);
+              _fetchAiAnalysis(); 
+            }, 
+            style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text(lang == 'ru' ? "Обновить" : "Жаңарту")
+          ),
         ],
       ),
     );
@@ -212,31 +193,23 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildDialogField(
-                _balanceController, lang == 'ru' ? "Счет ЕОСИ" : "ЕОСИ шоты"),
+            _buildDialogField(_balanceController, lang == 'ru' ? "Счет ЕОСИ" : "ЕОСИ шоты"),
             const SizedBox(height: 15),
-            _buildDialogField(_capitalController,
-                lang == 'ru' ? "Фонд кап. ремонта" : "Күрделі жөндеу қоры"),
+            _buildDialogField(_capitalController, lang == 'ru' ? "Фонд кап. ремонта" : "Күрделі жөндеу қоры"),
           ],
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(lang == 'ru' ? "Отмена" : "Бас тарту")),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(lang == 'ru' ? "Отмена" : "Бас тарту")),
           ElevatedButton(
             onPressed: () {
               setState(() {
-                _eosiBalance =
-                    double.tryParse(_balanceController.text) ?? _eosiBalance;
-                _capitalBalance =
-                    double.tryParse(_capitalController.text) ?? _capitalBalance;
+                _eosiBalance = double.tryParse(_balanceController.text) ?? _eosiBalance;
+                _capitalBalance = double.tryParse(_capitalController.text) ?? _capitalBalance;
               });
               Navigator.pop(context);
               _fetchAiAnalysis();
             },
-            style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12))),
+            style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: Text(lang == 'ru' ? "Сохранить" : "Сақтау"),
           ),
         ],
@@ -261,23 +234,36 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     setState(() => _isGeneratingPdf = true);
     try {
       final supabase = Supabase.instance.client;
-      final buildingContext = await BuildingContextService.loadCurrent();
-      final buildingId = buildingContext?.buildingId ?? _buildingId;
-      dynamic query = supabase.from('votes').select();
-      if (buildingId != null && buildingId.isNotEmpty) {
-        query = query.eq('building_id', buildingId);
-      }
-      final votesResponse = await query;
-      final List<Map<String, dynamic>> votes =
-          List<Map<String, dynamic>>.from(votesResponse as List);
 
+      // ВАЖНО: раньше здесь было supabase.from('votes').select() без
+      // единого фильтра — это тянуло ВСЕ голоса из базы, по всем домам и
+      // всем голосованиям сразу, включая подписи (signature_url) жителей
+      // чужих ОСИ. Председатель дома A получал в своём отчёте персональные
+      // данные жителей дома B — утечка данных между жилыми комплексами.
+      // Теперь ограничиваем выборку домом текущего председателя.
+      final buildingCtx = await BuildingContextService.loadCurrent();
+      final buildingId = buildingCtx?.buildingId;
+
+      if (buildingId == null || buildingId.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text("Нет привязки к дому — невозможно сформировать отчёт")));
+        }
+        setState(() => _isGeneratingPdf = false);
+        return;
+      }
+
+      final List<Map<String, dynamic>> votes = await supabase
+          .from('votes')
+          .select()
+          .eq('building_id', buildingId);
+      
       List<Map<String, dynamic>> preparedVotes = [];
       for (var v in votes) {
         dynamic bytes;
         if (v['signature_url'] != null) {
           try {
-            bytes =
-                await PdfReportService.downloadSignature(v['signature_url']);
+            bytes = await PdfReportService.downloadSignature(v['signature_url']);
           } catch (e) {
             debugPrint("Sig error: $e");
           }
@@ -291,104 +277,60 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       final font = await PdfGoogleFonts.robotoRegular();
       final fontBold = await PdfGoogleFonts.robotoMedium();
 
-      pdf.addPage(pw.MultiPage(
+      pdf.addPage(
+        pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(30),
           build: (pw.Context context) => [
-                pw.Center(
-                    child: pw.Text(
-                        "ЛИСТ ГОЛОСОВАНИЯ СОБСТВЕННИКОВ\n(Письменный опрос)",
-                        textAlign: pw.TextAlign.center,
-                        style: pw.TextStyle(font: fontBold, fontSize: 14))),
-                pw.SizedBox(height: 20),
-                pw.Text(
-                    "Вопрос: Утверждение плана работ на основании AI-аналитики 2025",
-                    style: pw.TextStyle(font: fontBold, fontSize: 10)),
-                pw.SizedBox(height: 10),
-                pw.Table(border: pw.TableBorder.all(width: 0.5), children: [
-                  pw.TableRow(
-                      decoration:
-                          const pw.BoxDecoration(color: PdfColors.grey200),
-                      children: [
-                        pw.Padding(
-                            padding: const pw.EdgeInsets.all(5),
-                            child: pw.Text("№",
-                                style:
-                                    pw.TextStyle(font: fontBold, fontSize: 9))),
-                        pw.Padding(
-                            padding: const pw.EdgeInsets.all(5),
-                            child: pw.Text("ФИО",
-                                style:
-                                    pw.TextStyle(font: fontBold, fontSize: 9))),
-                        pw.Padding(
-                            padding: const pw.EdgeInsets.all(5),
-                            child: pw.Text("Кв.",
-                                style:
-                                    pw.TextStyle(font: fontBold, fontSize: 9))),
-                        pw.Padding(
-                            padding: const pw.EdgeInsets.all(5),
-                            child: pw.Text("ЗА",
-                                style:
-                                    pw.TextStyle(font: fontBold, fontSize: 9))),
-                        pw.Padding(
-                            padding: const pw.EdgeInsets.all(5),
-                            child: pw.Text("ПРОТИВ",
-                                style:
-                                    pw.TextStyle(font: fontBold, fontSize: 9))),
-                      ]),
-                  ...List.generate(
-                      preparedVotes.isEmpty ? 10 : preparedVotes.length,
-                      (index) {
-                    if (preparedVotes.isEmpty) {
-                      return pw.TableRow(
-                          children: List.generate(
-                              5,
-                              (_) => pw.Padding(
-                                  padding: const pw.EdgeInsets.all(10),
-                                  child: pw.Text(""))));
-                    }
-                    final v = preparedVotes[index];
-                    return pw.TableRow(children: [
-                      pw.Padding(
-                          padding: const pw.EdgeInsets.all(5),
-                          child: pw.Text("${index + 1}",
-                              style: pw.TextStyle(font: font, fontSize: 8))),
-                      pw.Padding(
-                          padding: const pw.EdgeInsets.all(5),
-                          child: pw.Text("${v['full_name'] ?? ''}",
-                              style: pw.TextStyle(font: font, fontSize: 8))),
-                      pw.Padding(
-                          padding: const pw.EdgeInsets.all(5),
-                          child: pw.Text("${v['apartment'] ?? ''}",
-                              style: pw.TextStyle(font: font, fontSize: 8))),
-                      pw.Padding(
-                          padding: const pw.EdgeInsets.all(5),
-                          child: v['decision'] == 'yes' &&
-                                  v['sig_bytes'] != null
-                              ? pw.Container(
-                                  height: 15,
-                                  child:
-                                      pw.Image(pw.MemoryImage(v['sig_bytes'])))
-                              : pw.Text("")),
-                      pw.Padding(
-                          padding: const pw.EdgeInsets.all(5),
-                          child: v['decision'] == 'no' && v['sig_bytes'] != null
-                              ? pw.Container(
-                                  height: 15,
-                                  child:
-                                      pw.Image(pw.MemoryImage(v['sig_bytes'])))
-                              : pw.Text("")),
-                    ]);
-                  }),
-                ]),
-              ]));
+            pw.Center(
+              child: pw.Text(
+                "ЛИСТ ГОЛОСОВАНИЯ СОБСТВЕННИКОВ\n(Письменный опрос)", 
+                textAlign: pw.TextAlign.center, 
+                style: pw.TextStyle(font: fontBold, fontSize: 14)
+              )
+            ),
+            pw.SizedBox(height: 20),
+            pw.Text("Вопрос: Утверждение плана работ на основании AI-аналитики 2025", style: pw.TextStyle(font: fontBold, fontSize: 10)),
+            pw.SizedBox(height: 10),
+            pw.Table(
+              border: pw.TableBorder.all(width: 0.5),
+              children: [
+                pw.TableRow(
+                  decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                  children: [
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("№", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ФИО", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("Кв.", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ЗА", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                    pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("ПРОТИВ", style: pw.TextStyle(font: fontBold, fontSize: 9))),
+                  ]
+                ),
+                ...List.generate(preparedVotes.isEmpty ? 10 : preparedVotes.length, (index) {
+                  if (preparedVotes.isEmpty) {
+                    return pw.TableRow(children: List.generate(5, (_) => pw.Padding(padding: const pw.EdgeInsets.all(10), child: pw.Text(""))));
+                  }
+                  final v = preparedVotes[index];
+                  return pw.TableRow(
+                    children: [
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${index + 1}", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${v['full_name'] ?? ''}", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: pw.Text("${v['apartment'] ?? ''}", style: pw.TextStyle(font: font, fontSize: 8))),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: v['decision'] == 'yes' && v['sig_bytes'] != null ? pw.Container(height: 15, child: pw.Image(pw.MemoryImage(v['sig_bytes']))) : pw.Text("")),
+                      pw.Padding(padding: const pw.EdgeInsets.all(5), child: v['decision'] == 'no' && v['sig_bytes'] != null ? pw.Container(height: 15, child: pw.Image(pw.MemoryImage(v['sig_bytes']))) : pw.Text("")),
+                    ]
+                  );
+                }),
+              ]
+            ),
+          ]
+        )
+      );
 
       final bytes = await pdf.save();
       await Printing.sharePdf(bytes: bytes, filename: 'voting_list.pdf');
+
     } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     } finally {
       if (mounted) setState(() => _isGeneratingPdf = false);
     }
@@ -399,36 +341,24 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   Widget build(BuildContext context) {
     bool isDark = Theme.of(context).brightness == Brightness.dark;
     final supabase = Supabase.instance.client;
-    final tasksStream = (_buildingId != null && _buildingId!.isNotEmpty)
-        ? supabase
-            .from('tasks')
-            .stream(primaryKey: ['id']).eq('building_id', _buildingId!)
-        : supabase.from('tasks').stream(primaryKey: ['id']);
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
       builder: (context, lang, child) {
         return Scaffold(
           appBar: AppBar(
-            title: Text(
-                lang == 'ru' ? "Аналитика: Рынок РК" : "Аналитика: РК нарығы"),
+            title: Text(lang == 'ru' ? "Аналитика: Рынок РК" : "Аналитика: РК нарығы"),
             actions: [
-              IconButton(
-                  icon: const Icon(LucideIcons.barChart4),
-                  onPressed: () => _showManualStatDialog(lang)),
-              IconButton(
-                  icon: const Icon(LucideIcons.sparkles,
-                      color: Colors.blueAccent),
-                  onPressed: _fetchAiAnalysis)
+              IconButton(icon: const Icon(LucideIcons.barChart4), onPressed: () => _showManualStatDialog(lang)),
+              IconButton(icon: const Icon(LucideIcons.sparkles, color: Colors.blueAccent), onPressed: _fetchAiAnalysis)
             ],
           ),
           body: Stack(
             children: [
               StreamBuilder<List<Map<String, dynamic>>>(
-                stream: tasksStream,
+                stream: supabase.from('tasks').stream(primaryKey: ['id']),
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData)
-                    return const Center(child: CircularProgressIndicator());
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
                   final tasks = snapshot.data!;
                   double spent = 0;
@@ -438,43 +368,31 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                   for (var t in tasks) {
                     if (t['status'] == 'completed') {
                       completed++;
-                      spent += double.tryParse(
-                              t['final_price']?.toString() ?? '0') ??
-                          0;
+                      spent += double.tryParse(t['final_price']?.toString() ?? '0') ?? 0;
                     } else {
                       active++;
                     }
                   }
 
-                  double health = (completed + active) > 0
-                      ? completed / (completed + active)
-                      : 1.0;
+                  double health = (completed + active) > 0 ? completed / (completed + active) : 1.0;
 
                   return SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildFinancialOverview(
-                            _eosiBalance, _capitalBalance, spent, lang),
+                        _buildFinancialOverview(_eosiBalance, _capitalBalance, spent, lang),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(
-                            lang == 'ru' ? "AI Прогноз" : "AI болжамы"),
-                        _buildAIAdviceCard(
-                            _aiForecastText, _isAiLoading, lang, isDark),
+                        _buildSectionHeader(lang == 'ru' ? "AI Прогноз" : "AI болжамы"),
+                        _buildAIAdviceCard(_aiForecastText, _isAiLoading, lang, isDark),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(lang == 'ru'
-                            ? "Критические задачи"
-                            : "Маңызды міндеттер"),
+                        _buildSectionHeader(lang == 'ru' ? "Критические задачи" : "Маңызды міндеттер"),
                         _buildAiTasksList(_aiPriorityTasks),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(lang == 'ru'
-                            ? "Цены в РК (НДС 16%)"
-                            : "РК бағалары (ҚҚС 16%)"),
+                        _buildSectionHeader(lang == 'ru' ? "Цены в РК (НДС 16%)" : "РК бағалары (ҚҚС 16%)"),
                         _buildMarketComparison(isDark),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(
-                            lang == 'ru' ? "Статус дома" : "Үйдің күйі"),
+                        _buildSectionHeader(lang == 'ru' ? "Статус дома" : "Үйдің күйі"),
                         _buildHealthIndicator(health, active, lang),
                         const SizedBox(height: 30),
                         _buildReportButton(lang),
@@ -484,9 +402,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                   );
                 },
               ),
-              if (_isGeneratingPdf)
-                _buildOverlayLoader(
-                    lang == 'ru' ? "Создание PDF..." : "PDF жасалуда..."),
+              if (_isGeneratingPdf) _buildOverlayLoader(lang == 'ru' ? "Создание PDF..." : "PDF жасалуда..."),
             ],
           ),
         );
@@ -496,13 +412,11 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
   // --- 7. КОМПОНЕНТЫ ИНТЕРФЕЙСА ---
 
-  Widget _buildFinancialOverview(
-      double bal, double cap, double spent, String lang) {
+  Widget _buildFinancialOverview(double bal, double cap, double spent, String lang) {
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-            colors: [Color(0xFF0F172A), Color(0xFF1E293B)]),
+        gradient: const LinearGradient(colors: [Color(0xFF0F172A), Color(0xFF1E293B)]),
         borderRadius: BorderRadius.circular(28),
       ),
       child: Column(
@@ -512,10 +426,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _miniBalance(lang == 'ru' ? "ОСИ СЧЕТ" : "ОСИ ШОТЫ", bal,
-                    Colors.cyanAccent),
-                _miniBalance(lang == 'ru' ? "КАП. РЕМОНТ" : "КҮРДЕЛІ ЖӨНДЕУ",
-                    cap, Colors.orangeAccent),
+                _miniBalance(lang == 'ru' ? "ОСИ СЧЕТ" : "ОСИ ШОТЫ", bal, Colors.cyanAccent),
+                _miniBalance(lang == 'ru' ? "КАП. РЕМОНТ" : "КҮРДЕЛІ ЖӨНДЕУ", cap, Colors.orangeAccent),
               ],
             ),
           ),
@@ -523,16 +435,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ",
-                  style: const TextStyle(
-                      color: Colors.white54,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold)),
-              Text("${spent.toInt()} ₸",
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 22)),
+              Text(lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+              Text("${spent.toInt()} ₸", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
             ],
           )
         ],
@@ -544,20 +448,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: const TextStyle(
-                color: Colors.white38,
-                fontSize: 9,
-                fontWeight: FontWeight.bold)),
-        Text("${val.toInt()} ₸",
-            style: TextStyle(
-                color: col, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.bold)),
+        Text("${val.toInt()} ₸", style: TextStyle(color: col, fontSize: 18, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _buildAIAdviceCard(
-      String text, bool loading, String lang, bool isDark) {
+  Widget _buildAIAdviceCard(String text, bool loading, String lang, bool isDark) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -571,30 +468,17 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         children: [
           Row(
             children: [
-              const Icon(LucideIcons.sparkles,
-                  color: Colors.blueAccent, size: 16),
+              const Icon(LucideIcons.sparkles, color: Colors.blueAccent, size: 16),
               const SizedBox(width: 8),
-              Text("AI ANALYTICS",
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.blueAccent.withOpacity(0.7))),
+              Text("AI ANALYTICS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueAccent.withOpacity(0.7))),
             ],
           ),
           const SizedBox(height: 10),
           if (loading) const LinearProgressIndicator(minHeight: 2),
-          if (!loading)
-            Text(
-              text.isEmpty
-                  ? (lang == 'ru'
-                      ? "Нажмите иконку искр для анализа"
-                      : "Талдау үшін ұшқын белгішесін басыңыз")
-                  : text,
-              style: TextStyle(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: isDark ? Colors.white70 : Colors.black87),
-            ),
+          if (!loading) Text(
+            text.isEmpty ? (lang == 'ru' ? "Нажмите иконку искр для анализа" : "Талдау үшін ұшқын белгішесін басыңыз") : text,
+            style: TextStyle(fontSize: 13, height: 1.5, color: isDark ? Colors.white70 : Colors.black87),
+          ),
         ],
       ),
     );
@@ -602,26 +486,15 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
   Widget _buildAiTasksList(List<Map<String, dynamic>> tasks) {
     return Column(
-      children: tasks
-          .map((t) => Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: ListTile(
-                  leading: Icon(t['icon'] as IconData,
-                      color: t['importance'] == 'Critical'
-                          ? Colors.red
-                          : Colors.orange),
-                  title: Text(t['title'],
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.bold)),
-                  trailing: Text(t['cost'],
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blueAccent)),
-                ),
-              ))
-          .toList(),
+      children: tasks.map((t) => Card(
+        margin: const EdgeInsets.only(bottom: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ListTile(
+          leading: Icon(t['icon'] as IconData, color: t['importance'] == 'Critical' ? Colors.red : Colors.orange),
+          title: Text(t['title'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+          trailing: Text(t['cost'], style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
+        ),
+      )).toList(),
     );
   }
 
@@ -637,22 +510,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(e.value['label'],
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600)),
-                  Text("+${(trend * 100).toInt()}%",
-                      style: TextStyle(
-                          color: e.value['color'],
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12)),
+                  Text(e.value['label'], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text("+${(trend * 100).toInt()}%", style: TextStyle(color: e.value['color'], fontWeight: FontWeight.bold, fontSize: 12)),
                 ],
               ),
               const SizedBox(height: 6),
-              LinearProgressIndicator(
-                  value: trend * 2,
-                  color: e.value['color'],
-                  backgroundColor: e.value['color'].withOpacity(0.1),
-                  minHeight: 6),
+              LinearProgressIndicator(value: trend * 2, color: e.value['color'], backgroundColor: e.value['color'].withOpacity(0.1), minHeight: 6),
             ],
           ),
         );
@@ -664,17 +527,12 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     Color col = health > 0.7 ? Colors.green : Colors.orange;
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: col.withOpacity(0.2))),
+      decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), border: Border.all(color: col.withOpacity(0.2))),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text("${(health * 100).toInt()}%",
-              style: TextStyle(
-                  color: col, fontSize: 32, fontWeight: FontWeight.w900)),
-          Text(lang == 'ru' ? "Активно: $active" : "Белсенді: $active",
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text("${(health * 100).toInt()}%", style: TextStyle(color: col, fontSize: 32, fontWeight: FontWeight.w900)),
+          Text(lang == 'ru' ? "Активно: $active" : "Белсенді: $active", style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -688,37 +546,27 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         onPressed: _isGeneratingPdf ? null : () => _handlePdfGeneration(lang),
         icon: const Icon(LucideIcons.fileDown, color: Colors.white),
         label: Text(lang == 'ru' ? "СКАЧАТЬ ЛИСТ ГОЛОСОВАНИЯ" : "ЖҮКТЕУ"),
-        style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blueAccent,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18))),
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
       ),
     );
   }
 
   Widget _buildSectionHeader(String title) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Text(title.toUpperCase(),
-            style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                color: Colors.grey,
-                letterSpacing: 1)),
-      );
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1)),
+  );
 
   Widget _buildOverlayLoader(String text) => Container(
-        color: Colors.black87,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(color: Colors.blueAccent),
-              const SizedBox(height: 20),
-              Text(text,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-      );
+    color: Colors.black87,
+    child: Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: Colors.blueAccent),
+          const SizedBox(height: 20),
+          Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    ),
+  );
 }

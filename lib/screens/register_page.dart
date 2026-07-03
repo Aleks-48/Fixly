@@ -1,14 +1,11 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/login_page.dart';
+import 'package:fixly_app/screens/main_wrapper.dart';
 import 'package:fixly_app/screens/osi_selection_screen.dart'; // Добавлен импорт экрана выбора ОСИ
 import 'package:lucide_icons/lucide_icons.dart';
-
-// Тот же redirect, что и в login_page.dart — должен совпадать в
-// AndroidManifest.xml / Info.plist / Supabase Dashboard.
-const String _kGoogleRedirectTo = 'fixlyapp://login-callback';
 
 // ============================================================
 //  RegisterPage — экран регистрации
@@ -27,60 +24,44 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage>
     with SingleTickerProviderStateMixin {
-  final _supabase = Supabase.instance.client;
-  final _nameCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  final _pass2Ctrl = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+  final _supabase   = Supabase.instance.client;
+  final _nameCtrl   = TextEditingController();
+  final _emailCtrl  = TextEditingController();
+  final _passCtrl   = TextEditingController();
+  final _pass2Ctrl  = TextEditingController();
+  final _formKey    = GlobalKey<FormState>();
 
-  bool _isLoading = false;
-  bool _isGoogleLoading = false;
-  bool _obscurePass = true;
-  bool _obscurePass2 = true;
-  String _selectedRole = 'resident'; // resident | master | osi
+  bool    _isLoading       = false;
+  bool    _isGoogleLoading = false;
+  bool    _obscurePass     = true;
+  bool    _obscurePass2    = true;
+  String  _selectedRole    = 'resident'; // resident | master | osi
   String? _errorMessage;
 
   late AnimationController _animCtrl;
   late List<Animation<double>> _fadeAnims;
-  late List<Animation<Offset>> _slideAnims;
-
-  StreamSubscription<AuthState>? _authSub;
-  // Защита от повторного срабатывания listener'а (например, если событие
-  // signedIn придёт дважды) — создаём профиль и переходим на OSI только раз.
-  bool _oauthHandled = false;
+  late List<Animation<Offset>>  _slideAnims;
 
   @override
   void initState() {
     super.initState();
     _setupAnimations();
     _animCtrl.forward();
-    _listenForOAuthCompletion();
-  }
-
-  void _listenForOAuthCompletion() {
-    _authSub = _supabase.auth.onAuthStateChange.listen((data) async {
-      if (data.event == AuthChangeEvent.signedIn &&
-          data.session != null &&
-          !_oauthHandled) {
-        _oauthHandled = true;
-        await _finishGoogleSignUp(data.session!.user);
-      }
-    });
   }
 
   void _setupAnimations() {
     _animCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1400));
+        vsync: this,
+        duration: const Duration(milliseconds: 1400));
 
     final intervals = [
-      const Interval(0.0, 0.35),
-      const Interval(0.1, 0.45),
-      const Interval(0.2, 0.55),
-      const Interval(0.3, 0.65),
-      const Interval(0.4, 0.75),
-      const Interval(0.5, 0.85),
-      const Interval(0.6, 1.0),
+      const Interval(0.0,  0.35),
+      const Interval(0.1,  0.45),
+      const Interval(0.2,  0.55),
+      const Interval(0.3,  0.65),
+      const Interval(0.4,  0.75),
+      const Interval(0.5,  0.85),
+      const Interval(0.6,  1.0),
     ];
 
     _fadeAnims = intervals
@@ -92,13 +73,13 @@ class _RegisterPageState extends State<RegisterPage>
                 begin: const Offset(0, 0.25), end: Offset.zero)
             .animate(CurvedAnimation(
                 parent: _animCtrl,
-                curve: Interval(i.begin, i.end, curve: Curves.easeOutCubic))))
+                curve: Interval(i.begin, i.end,
+                    curve: Curves.easeOutCubic))))
         .toList();
   }
 
   @override
   void dispose() {
-    _authSub?.cancel();
     _animCtrl.dispose();
     _nameCtrl.dispose();
     _emailCtrl.dispose();
@@ -110,14 +91,11 @@ class _RegisterPageState extends State<RegisterPage>
   // ── РЕГИСТРАЦИЯ ЧЕРЕЗ EMAIL ───────────────────────────────
   Future<void> _registerWithEmail() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    setState(() { _isLoading = true; _errorMessage = null; });
 
     try {
       final res = await _supabase.auth.signUp(
-        email: _emailCtrl.text.trim(),
+        email   : _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
       );
 
@@ -125,20 +103,14 @@ class _RegisterPageState extends State<RegisterPage>
       if (user == null) throw Exception('User is null after signUp');
 
       // ИСПРАВЛЕНИЕ: Явно указываем user_type, чтобы БД не ставила "master" по умолчанию
-      final String profileRole =
-          _selectedRole == 'osi' ? 'chairman' : _selectedRole;
-      final String userType =
-          _selectedRole == 'master' ? 'contractor' : 'resident';
-      final String chairmanStatus =
-          _selectedRole == 'osi' ? 'pending' : 'unverified';
+      final String userType = _selectedRole == 'master' ? 'contractor' : 'resident';
 
       await _supabase.from('profiles').upsert({
-        'id': user.id,
-        'full_name': _nameCtrl.text.trim(),
-        'role': profileRole,
-        'user_type': userType, // Явная передача типа
-        'chairman_verification_status': chairmanStatus,
-        'email': _emailCtrl.text.trim(),
+        'id'        : user.id,
+        'full_name' : _nameCtrl.text.trim(),
+        'role'      : _selectedRole, // Сохраняется выбранная роль (в т.ч. 'osi')
+        'user_type' : userType,      // Явная передача типа
+        'email'     : _emailCtrl.text.trim(),
         'created_at': DateTime.now().toIso8601String(),
       });
 
@@ -159,29 +131,75 @@ class _RegisterPageState extends State<RegisterPage>
       _showError(_mapAuthError(e.message));
     } catch (e) {
       debugPrint('Register error: $e');
-      _showError(
-          appLanguage.value == 'ru' ? 'Ошибка регистрации' : 'Тіркелу қатесі');
+      _showError(appLanguage.value == 'ru'
+          ? 'Ошибка регистрации'
+          : 'Тіркелу қатесі');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   // ── GOOGLE SIGN-UP ────────────────────────────────────────
-  // Открывает Google OAuth. Создание профиля и переход на OsiSelectionScreen
-  // происходят в _finishGoogleSignUp, вызываемом из onAuthStateChange —
-  // signInWithOAuth лишь открывает окно входа и не возвращает сессию.
   Future<void> _signUpWithGoogle() async {
-    setState(() {
-      _isGoogleLoading = true;
-      _errorMessage = null;
-    });
+    setState(() { _isGoogleLoading = true; _errorMessage = null; });
 
     try {
-      await _supabase.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: _kGoogleRedirectTo,
-        authScreenLaunchMode: LaunchMode.externalApplication,
+      const webClientId ='700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com';
+      
+      final googleSignIn = GoogleSignIn(
+        serverClientId: webClientId,
+        scopes: ['email', 'profile'],
       );
+
+      final googleUser = await googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() => _isGoogleLoading = false);
+        return;
+      }
+
+      final googleAuth  = await googleUser.authentication;
+      final accessToken = googleAuth.accessToken;
+      final idToken     = googleAuth.idToken;
+
+      if (idToken == null) throw Exception('Google ID token is null');
+
+      final res = await _supabase.auth.signInWithIdToken(
+        provider   : OAuthProvider.google,
+        idToken    : idToken,
+        accessToken: accessToken,
+      );
+
+      final user = res.user;
+      if (user == null) throw Exception('User is null');
+
+      final existing = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (existing == null) {
+        final String userType = _selectedRole == 'master' ? 'contractor' : 'resident';
+        
+        await _supabase.from('profiles').insert({
+          'id'        : user.id,
+          'full_name' : googleUser.displayName ?? '',
+          'avatar_url': googleUser.photoUrl,
+          'email'     : googleUser.email,
+          'role'      : _selectedRole, 
+          'user_type' : userType,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      // ИСПРАВЛЕНИЕ: Перекидываем на карту выбора ОСИ после Google
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const OsiSelectionScreen()),
+          (_) => false,
+        );
+      }
     } on AuthException catch (e) {
       _showError(_mapAuthError(e.message));
     } catch (e) {
@@ -191,56 +209,6 @@ class _RegisterPageState extends State<RegisterPage>
           : 'Google арқылы кіру қатесі. Параметрлерді тексеріңіз.');
     } finally {
       if (mounted) setState(() => _isGoogleLoading = false);
-    }
-  }
-
-  // Вызывается один раз после успешного возврата из Google OAuth.
-  // Создаёт профиль с выбранной до входа ролью (_selectedRole), если его
-  // ещё нет, и переводит пользователя на выбор дома (как и раньше).
-  Future<void> _finishGoogleSignUp(User user) async {
-    try {
-      final existing = await _supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', user.id)
-          .maybeSingle();
-
-      if (existing == null) {
-        final String profileRole =
-            _selectedRole == 'osi' ? 'chairman' : _selectedRole;
-        final String userType =
-            _selectedRole == 'master' ? 'contractor' : 'resident';
-        final String chairmanStatus =
-            _selectedRole == 'osi' ? 'pending' : 'unverified';
-
-        await _supabase.from('profiles').insert({
-          'id': user.id,
-          'full_name': user.userMetadata?['full_name'] ??
-              user.userMetadata?['name'] ?? '',
-          'avatar_url': user.userMetadata?['avatar_url'] ??
-              user.userMetadata?['picture'],
-          'email': user.email,
-          'role': profileRole,
-          'user_type': userType,
-          'chairman_verification_status': chairmanStatus,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
-
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const OsiSelectionScreen()),
-          (_) => false,
-        );
-      }
-    } catch (e) {
-      debugPrint('finishGoogleSignUp error: $e');
-      if (mounted) {
-        _showError(appLanguage.value == 'ru'
-            ? 'Ошибка создания профиля: $e'
-            : 'Профиль жасау қатесі: $e');
-      }
     }
   }
 
@@ -255,7 +223,8 @@ class _RegisterPageState extends State<RegisterPage>
       barrierDismissible: false,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF0F1625),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -283,7 +252,8 @@ class _RegisterPageState extends State<RegisterPage>
                   ? 'На ${_emailCtrl.text.trim()} отправлено письмо для подтверждения аккаунта'
                   : '${_emailCtrl.text.trim()} мекенжайына аккаунтты растау хаты жіберілді',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF6B7A9E), fontSize: 13),
+              style: const TextStyle(
+                  color: Color(0xFF6B7A9E), fontSize: 13),
             ),
             const SizedBox(height: 20),
             SizedBox(
@@ -298,13 +268,15 @@ class _RegisterPageState extends State<RegisterPage>
                   Navigator.pop(context);
                   Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => const LoginPage()),
+                    MaterialPageRoute(
+                        builder: (_) => const LoginPage()),
                   );
                 },
                 child: Text(
                   lang == 'ru' ? 'Перейти к входу' : 'Кіруге өту',
                   style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.bold),
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold),
                 ),
               ),
             ),
@@ -316,7 +288,7 @@ class _RegisterPageState extends State<RegisterPage>
 
   String _mapAuthError(String msg) {
     final lang = appLanguage.value;
-    final m = msg.toLowerCase();
+    final m    = msg.toLowerCase();
     if (m.contains('already registered') || m.contains('already exists')) {
       return lang == 'ru'
           ? 'Этот email уже зарегистрирован'
@@ -360,8 +332,7 @@ class _RegisterPageState extends State<RegisterPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // ── ЗАГОЛОВОК ─────────────────────────────
-                    _animated(
-                      0,
+                    _animated(0,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -392,8 +363,7 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 32),
 
                     // ── ВЫБОР РОЛИ ────────────────────────────
-                    _animated(
-                      1,
+                    _animated(1,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -410,25 +380,25 @@ class _RegisterPageState extends State<RegisterPage>
                             children: [
                               Expanded(
                                 child: _roleCard(
-                                  role: 'resident',
-                                  label: lang == 'ru' ? 'Житель' : 'Тұрғын',
+                                  role    : 'resident',
+                                  label   : lang == 'ru' ? 'Житель' : 'Тұрғын',
                                   subtitle: lang == 'ru'
                                       ? 'Нахожу мастеров'
                                       : 'Шебер іздеймін',
-                                  icon: LucideIcons.home,
-                                  lang: lang,
+                                  icon    : LucideIcons.home,
+                                  lang    : lang,
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: _roleCard(
-                                  role: 'master',
-                                  label: lang == 'ru' ? 'Мастер' : 'Шебер',
+                                  role    : 'master',
+                                  label   : lang == 'ru' ? 'Мастер' : 'Шебер',
                                   subtitle: lang == 'ru'
                                       ? 'Принимаю заказы'
                                       : 'Тапсырыс қабылдаймын',
-                                  icon: LucideIcons.hardHat,
-                                  lang: lang,
+                                  icon    : LucideIcons.hardHat,
+                                  lang    : lang,
                                 ),
                               ),
                             ],
@@ -437,15 +407,13 @@ class _RegisterPageState extends State<RegisterPage>
                           SizedBox(
                             width: double.infinity,
                             child: _roleCard(
-                              role: 'osi',
-                              label: lang == 'ru'
-                                  ? 'Председатель ОСИ'
-                                  : 'МИБ төрағасы',
+                              role    : 'osi',
+                              label   : lang == 'ru' ? 'Председатель ОСИ' : 'МИБ төрағасы',
                               subtitle: lang == 'ru'
                                   ? 'Управление домом и заявками'
                                   : 'Үйді және тапсырыстарды басқару',
-                              icon: LucideIcons.building,
-                              lang: lang,
+                              icon    : LucideIcons.building,
+                              lang    : lang,
                             ),
                           ),
                         ],
@@ -455,14 +423,13 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 20),
 
                     // ── ИМЯ ──────────────────────────────────
-                    _animated(
-                      2,
+                    _animated(2,
                       child: _buildTextField(
                         controller: _nameCtrl,
-                        label: lang == 'ru' ? 'Имя и фамилия' : 'Аты-жөні',
-                        hint: lang == 'ru' ? 'Иван Иванов' : 'Иван Иванов',
-                        icon: LucideIcons.user,
-                        validator: (v) {
+                        label     : lang == 'ru' ? 'Имя и фамилия' : 'Аты-жөні',
+                        hint      : lang == 'ru' ? 'Иван Иванов' : 'Иван Иванов',
+                        icon      : LucideIcons.user,
+                        validator : (v) {
                           if (v == null || v.trim().length < 2) {
                             return lang == 'ru'
                                 ? 'Введите имя (мин. 2 символа)'
@@ -476,15 +443,14 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 14),
 
                     // ── EMAIL ─────────────────────────────────
-                    _animated(
-                      3,
+                    _animated(3,
                       child: _buildTextField(
                         controller: _emailCtrl,
-                        label: 'Email',
-                        hint: 'example@email.com',
-                        icon: LucideIcons.mail,
-                        keyboard: TextInputType.emailAddress,
-                        validator: (v) {
+                        label     : 'Email',
+                        hint      : 'example@email.com',
+                        icon      : LucideIcons.mail,
+                        keyboard  : TextInputType.emailAddress,
+                        validator : (v) {
                           if (v == null || !v.contains('@')) {
                             return lang == 'ru'
                                 ? 'Введите корректный email'
@@ -498,19 +464,17 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 14),
 
                     // ── ПАРОЛЬ ────────────────────────────────
-                    _animated(
-                      4,
+                    _animated(4,
                       child: _buildTextField(
                         controller: _passCtrl,
-                        label: lang == 'ru' ? 'Пароль' : 'Пароль',
-                        hint: '••••••••',
-                        icon: LucideIcons.lock,
-                        obscure: _obscurePass,
+                        label     : lang == 'ru' ? 'Пароль' : 'Пароль',
+                        hint      : '••••••••',
+                        icon      : LucideIcons.lock,
+                        obscure   : _obscurePass,
                         suffixIcon: IconButton(
                           icon: Icon(
                             _obscurePass ? LucideIcons.eyeOff : LucideIcons.eye,
-                            color: const Color(0xFF4361EE),
-                            size: 18,
+                            color: const Color(0xFF4361EE), size: 18,
                           ),
                           onPressed: () =>
                               setState(() => _obscurePass = !_obscurePass),
@@ -529,23 +493,17 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 14),
 
                     // ── ПОВТОР ПАРОЛЯ ─────────────────────────
-                    _animated(
-                      4,
+                    _animated(4,
                       child: _buildTextField(
                         controller: _pass2Ctrl,
-                        label: lang == 'ru'
-                            ? 'Повторите пароль'
-                            : 'Парольды қайталаңыз',
-                        hint: '••••••••',
-                        icon: LucideIcons.lock,
-                        obscure: _obscurePass2,
+                        label     : lang == 'ru' ? 'Повторите пароль' : 'Парольды қайталаңыз',
+                        hint      : '••••••••',
+                        icon      : LucideIcons.lock,
+                        obscure   : _obscurePass2,
                         suffixIcon: IconButton(
                           icon: Icon(
-                            _obscurePass2
-                                ? LucideIcons.eyeOff
-                                : LucideIcons.eye,
-                            color: const Color(0xFF4361EE),
-                            size: 18,
+                            _obscurePass2 ? LucideIcons.eyeOff : LucideIcons.eye,
+                            color: const Color(0xFF4361EE), size: 18,
                           ),
                           onPressed: () =>
                               setState(() => _obscurePass2 = !_obscurePass2),
@@ -571,8 +529,8 @@ class _RegisterPageState extends State<RegisterPage>
                         decoration: BoxDecoration(
                           color: Colors.red.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: Colors.red.withOpacity(0.3)),
+                          border: Border.all(
+                              color: Colors.red.withOpacity(0.3)),
                         ),
                         child: Row(
                           children: [
@@ -582,7 +540,8 @@ class _RegisterPageState extends State<RegisterPage>
                             Expanded(
                               child: Text(_errorMessage!,
                                   style: const TextStyle(
-                                      color: Colors.redAccent, fontSize: 13)),
+                                      color: Colors.redAccent,
+                                      fontSize: 13)),
                             ),
                           ],
                         ),
@@ -591,13 +550,13 @@ class _RegisterPageState extends State<RegisterPage>
                     ],
 
                     // ── КНОПКА РЕГИСТРАЦИИ ────────────────────
-                    _animated(
-                      5,
+                    _animated(5,
                       child: SizedBox(
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: _isLoading ? null : _registerWithEmail,
+                          onPressed:
+                              _isLoading ? null : _registerWithEmail,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF4361EE),
                             disabledBackgroundColor:
@@ -608,8 +567,7 @@ class _RegisterPageState extends State<RegisterPage>
                           ),
                           child: _isLoading
                               ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
+                                  width: 22, height: 22,
                                   child: CircularProgressIndicator(
                                       color: Colors.white, strokeWidth: 2.5))
                               : Text(
@@ -628,14 +586,14 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 18),
 
                     // ── РАЗДЕЛИТЕЛЬ ───────────────────────────
-                    _animated(
-                      5,
+                    _animated(5,
                       child: Row(
                         children: [
                           const Expanded(
                               child: Divider(color: Color(0xFF1E2A45))),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14),
                             child: Text(
                               lang == 'ru' ? 'или' : 'немесе',
                               style: const TextStyle(
@@ -651,14 +609,14 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 18),
 
                     // ── GOOGLE ────────────────────────────────
-                    _animated(
-                      6,
+                    _animated(6,
                       child: SizedBox(
                         width: double.infinity,
                         height: 56,
                         child: OutlinedButton(
-                          onPressed:
-                              _isGoogleLoading ? null : _signUpWithGoogle,
+                          onPressed: _isGoogleLoading
+                              ? null
+                              : _signUpWithGoogle,
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(
                                 color: Color(0xFF1E2A45), width: 1.5),
@@ -668,16 +626,15 @@ class _RegisterPageState extends State<RegisterPage>
                           ),
                           child: _isGoogleLoading
                               ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
+                                  width: 22, height: 22,
                                   child: CircularProgressIndicator(
                                       strokeWidth: 2.5))
                               : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
                                   children: [
                                     SizedBox(
-                                      width: 22,
-                                      height: 22,
+                                      width: 22, height: 22,
                                       child: CustomPaint(
                                           painter: _GoogleIconPainter()),
                                     ),
@@ -700,8 +657,7 @@ class _RegisterPageState extends State<RegisterPage>
                     const SizedBox(height: 28),
 
                     // ── УЖЕ ЕСТЬ АККАУНТ ──────────────────────
-                    _animated(
-                      6,
+                    _animated(6,
                       child: Center(
                         child: GestureDetector(
                           onTap: () => Navigator.pushReplacement(
@@ -715,10 +671,13 @@ class _RegisterPageState extends State<RegisterPage>
                                   ? 'Уже есть аккаунт?  '
                                   : 'Аккаунт бар ма?  ',
                               style: const TextStyle(
-                                  color: Color(0xFF6B7A9E), fontSize: 14),
+                                  color: Color(0xFF6B7A9E),
+                                  fontSize: 14),
                               children: [
                                 TextSpan(
-                                  text: lang == 'ru' ? 'Войти' : 'Кіру',
+                                  text: lang == 'ru'
+                                      ? 'Войти'
+                                      : 'Кіру',
                                   style: const TextStyle(
                                       color: Color(0xFF4361EE),
                                       fontWeight: FontWeight.w700,
@@ -744,11 +703,11 @@ class _RegisterPageState extends State<RegisterPage>
 
   // ── Карточка роли ─────────────────────────────────────────
   Widget _roleCard({
-    required String role,
-    required String label,
-    required String subtitle,
+    required String   role,
+    required String   label,
+    required String   subtitle,
     required IconData icon,
-    required String lang,
+    required String   lang,
   }) {
     final isSelected = _selectedRole == role;
     return GestureDetector(
@@ -762,8 +721,9 @@ class _RegisterPageState extends State<RegisterPage>
               : const Color(0xFF0F1625),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color:
-                isSelected ? const Color(0xFF4361EE) : const Color(0xFF1E2A45),
+            color: isSelected
+                ? const Color(0xFF4361EE)
+                : const Color(0xFF1E2A45),
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -795,14 +755,17 @@ class _RegisterPageState extends State<RegisterPage>
             Text(
               label,
               style: TextStyle(
-                  color: isSelected ? Colors.white : const Color(0xFF8899BB),
+                  color: isSelected
+                      ? Colors.white
+                      : const Color(0xFF8899BB),
                   fontWeight: FontWeight.w700,
                   fontSize: 14),
             ),
             const SizedBox(height: 2),
             Text(
               subtitle,
-              style: const TextStyle(color: Color(0xFF4A5568), fontSize: 11),
+              style: const TextStyle(
+                  color: Color(0xFF4A5568), fontSize: 11),
             ),
           ],
         ),
@@ -814,7 +777,8 @@ class _RegisterPageState extends State<RegisterPage>
   Widget _animated(int index, {required Widget child}) {
     return FadeTransition(
       opacity: _fadeAnims[index],
-      child: SlideTransition(position: _slideAnims[index], child: child),
+      child: SlideTransition(
+          position: _slideAnims[index], child: child),
     );
   }
 
@@ -830,21 +794,22 @@ class _RegisterPageState extends State<RegisterPage>
     String? Function(String?)? validator,
   }) {
     return TextFormField(
-      controller: controller,
+      controller  : controller,
       keyboardType: keyboard,
-      obscureText: obscure,
-      validator: validator,
+      obscureText : obscure,
+      validator   : validator,
       style: const TextStyle(color: Colors.white, fontSize: 15),
       cursorColor: const Color(0xFF4361EE),
       decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
+        labelText : label,
+        hintText  : hint,
         labelStyle: const TextStyle(color: Color(0xFF4A5568)),
-        hintStyle: const TextStyle(color: Color(0xFF2A3A55)),
-        prefixIcon: Icon(icon, color: const Color(0xFF4361EE), size: 19),
+        hintStyle : const TextStyle(color: Color(0xFF2A3A55)),
+        prefixIcon:
+            Icon(icon, color: const Color(0xFF4361EE), size: 19),
         suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: const Color(0xFF0F1625),
+        filled    : true,
+        fillColor : const Color(0xFF0F1625),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: Color(0xFF1E2A45)),
@@ -855,19 +820,23 @@ class _RegisterPageState extends State<RegisterPage>
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF4361EE), width: 1.5),
+          borderSide: const BorderSide(
+              color: Color(0xFF4361EE), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Colors.redAccent, width: 1),
+          borderSide:
+              const BorderSide(color: Colors.redAccent, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+          borderSide: const BorderSide(
+              color: Colors.redAccent, width: 1.5),
         ),
-        errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 12),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        errorStyle: const TextStyle(
+            color: Colors.redAccent, fontSize: 12),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16, vertical: 16),
       ),
     );
   }
@@ -881,22 +850,23 @@ class _GoogleIconPainter extends CustomPainter {
     final r = size.width / 2;
     final paint = Paint()..style = PaintingStyle.fill;
     paint.color = const Color(0xFFEA4335);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), -1.55, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r),
+        -1.55, 1.57, true, paint);
     paint.color = const Color(0xFFFBBC05);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), 0.02, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r),
+        0.02, 1.57, true, paint);
     paint.color = const Color(0xFF34A853);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), 1.59, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r),
+        1.59, 1.57, true, paint);
     paint.color = const Color(0xFF4285F4);
-    canvas.drawArc(
-        Rect.fromCircle(center: center, radius: r), 3.16, 1.57, true, paint);
+    canvas.drawArc(Rect.fromCircle(center: center, radius: r),
+        3.16, 1.57, true, paint);
     paint.color = const Color(0xFF0F1625);
     canvas.drawCircle(center, r * 0.65, paint);
     paint.color = const Color(0xFF4285F4);
     canvas.drawRect(
-      Rect.fromLTWH(center.dx, center.dy - r * 0.12, r * 0.85, r * 0.25),
+      Rect.fromLTWH(
+          center.dx, center.dy - r * 0.12, r * 0.85, r * 0.25),
       paint,
     );
   }

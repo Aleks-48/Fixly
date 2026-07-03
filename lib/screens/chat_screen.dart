@@ -74,17 +74,22 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _repairReceiverId() async {
     if (effectiveReceiverId.isNotEmpty && effectiveReceiverId != "null") return;
     try {
+      // ВАЖНО: таблица tasks реально содержит только user_id и master_id.
+      // Раньше здесь запрашивались несуществующие колонки
+      // (client_id, chairman_id, assignee_id) — PostgREST возвращал ошибку
+      // на весь select, запрос падал в catch, и собеседник никогда не
+      // определялся (сообщения не отправлялись).
       final data = await supabase.from('tasks')
-          .select('client_id, master_id, chairman_id, user_id, assignee_id')
+          .select('user_id, master_id')
           .eq('id', widget.taskId)
           .single();
 
       if (mounted) {
         setState(() {
           if (data['user_id'] == myId) {
-            _detectedReceiverId = data['master_id'] ?? data['assignee_id'] ?? data['chairman_id'];
+            _detectedReceiverId = data['master_id'];
           } else {
-            _detectedReceiverId = data['user_id'] ?? data['client_id'] ?? data['chairman_id'];
+            _detectedReceiverId = data['user_id'];
           }
         });
       }
@@ -115,10 +120,19 @@ class _ChatScreenState extends State<ChatScreen> {
       Map<String, dynamic> updateData = {'status': newStatus, 'master_id': myId};
 
       if (newStatus == 'traveling') {
-        final taskData = await supabase.from('tasks').select('payment_status').eq('id', widget.taskId).single();
-        if (taskData['payment_status'] != 'reserved') {
-          _showSnackBar("⚠️ Клиент еще не зарезервировал оплату!", Colors.orange);
-          return;
+        // ВАЖНО: раньше здесь была жёсткая блокировка — переход в статус
+        // "Я выехал" требовал payment_status == 'reserved'. Но нигде в
+        // проекте нет ни одной интеграции оплаты (Kaspi, любой другой
+        // платёжный шлюз), которая бы устанавливала payment_status в
+        // 'reserved' или писала reserved_amount. Условие физически не
+        // могло стать true — мастер НИКОГДА не мог отметить, что выехал
+        // к клиенту, весь рабочий процесс был заблокирован в самом
+        // начале. Пока реальная оплата не подключена, разрешаем переход
+        // без проверки, только предупреждаем в чате, что оплата ещё не
+        // зарезервирована.
+        final taskData = await supabase.from('tasks').select('payment_status').eq('id', widget.taskId).maybeSingle();
+        if (taskData?['payment_status'] != 'reserved') {
+          _showSnackBar("Оплата пока не зарезервирована клиентом", Colors.orange);
         }
         await _startLocationTracking();
         await _sendSystemMessage("🚀 Я выехал к вам!");
