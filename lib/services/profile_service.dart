@@ -11,6 +11,19 @@ import 'package:fixly_app/models/user_model.dart';
 class ProfileService {
   static final _sb = Supabase.instance.client;
 
+  // ВАЖНО: диагностика показала, что колонки 'specialty' нет в реальной
+  // таблице profiles в Supabase, хотя searchMasters() и другие методы
+  // фильтруют/сортируют по ней. Без миграции БД (правим только
+  // приложение) кэшируем список подтверждённо отсутствующих колонок на
+  // уровне класса и пропускаем фильтры по ним при повторных вызовах.
+  static final Set<String> _missingColumns = {};
+
+  static String? _extractMissingColumn(Object error) {
+    final match = RegExp(r'column [\w]+\.([\w]+) does not exist')
+        .firstMatch(error.toString());
+    return match?.group(1);
+  }
+
   // ── ПОЛУЧИТЬ ТЕКУЩИЙ ПРОФИЛЬ ──────────────────────────────
   static Future<UserModel?> getCurrentProfile() async {
     final uid = _sb.auth.currentUser?.id;
@@ -134,39 +147,52 @@ class ProfileService {
     int     page     = 0,
     int     pageSize = 20,
   }) async {
-    try {
-      // 1. Создаем базовый запрос
-      var query = _sb
-          .from('profiles')
-          .select()
-          .eq('role', 'master')
-          .eq('is_verified', true);
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        // 1. Создаем базовый запрос
+        var query = _sb
+            .from('profiles')
+            .select()
+            .eq('role', 'master');
+        if (!_missingColumns.contains('is_verified')) {
+          query = query.eq('is_verified', true);
+        }
 
-      // 2. Добавляем динамические фильтры
-      if (specialty != null) {
-        query = query.eq('specialty', specialty);
-      }
-      if (minRating != null) {
-        query = query.gte('rating', minRating);
-      }
-      if (nameQuery != null && nameQuery.isNotEmpty) {
-        query = query.ilike('full_name', '%$nameQuery%');
-      }
-      if (buildingId != null) {
-        query = query.eq('building_id', buildingId);
-      }
+        // 2. Добавляем динамические фильтры
+        if (specialty != null && !_missingColumns.contains('specialty')) {
+          query = query.eq('specialty', specialty);
+        }
+        if (minRating != null && !_missingColumns.contains('rating')) {
+          query = query.gte('rating', minRating);
+        }
+        if (nameQuery != null && nameQuery.isNotEmpty) {
+          query = query.ilike('full_name', '%$nameQuery%');
+        }
+        if (buildingId != null && !_missingColumns.contains('building_id')) {
+          query = query.eq('building_id', buildingId);
+        }
 
-      // 3. Сортировка и пагинация в конце
-      final response = await query
-          .order('rating', ascending: false)
-          .range(page * pageSize, (page + 1) * pageSize - 1);
+        // 3. Сортировка и пагинация в конце
+        dynamic sortedQuery = query;
+        if (!_missingColumns.contains('rating')) {
+          sortedQuery = sortedQuery.order('rating', ascending: false);
+        }
+        final response = await sortedQuery
+            .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      return (response as List)
-          .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      return [];
+        return (response as List)
+            .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
+            .toList();
+      } catch (e) {
+        final missing = _extractMissingColumn(e);
+        if (missing != null && !_missingColumns.contains(missing)) {
+          _missingColumns.add(missing);
+          continue;
+        }
+        return [];
+      }
     }
+    return [];
   }
 
   // ── ОБНОВИТЬ FCM ТОКЕН ────────────────────────────────────

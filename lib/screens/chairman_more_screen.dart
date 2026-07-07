@@ -9,6 +9,7 @@ import 'package:fixly_app/screens/masters_list_screen.dart';
 import 'package:fixly_app/screens/profile/chairman_Analytics_Screen.dart';
 import 'package:fixly_app/screens/profile_page.dart';
 import 'package:fixly_app/screens/voting_list_screen.dart';
+import 'package:fixly_app/screens/verification_screen.dart';
 
 class ChairmanMoreScreen extends StatelessWidget {
   const ChairmanMoreScreen({super.key});
@@ -75,6 +76,20 @@ body: ListView(
       'Мастера',
       'Исполнители для заявок дома',
       const MastersListScreen(),
+    ),
+    // ВАЖНО: раньше verification_screen.dart (список заявок мастеров на
+    // верификацию + кнопки одобрить/отклонить для председателя)
+    // существовал, но никуда не был подключён — председатель не мог
+    // физически попасть на проверку мастеров.
+    _tile(
+      context,
+      card,
+      isDark,
+      LucideIcons.shieldCheck,
+      Colors.indigo,
+      'Верификация мастеров',
+      'Проверка документов и одобрение заявок',
+      const VerificationScreen(),
     ),
     _tile(
       context,

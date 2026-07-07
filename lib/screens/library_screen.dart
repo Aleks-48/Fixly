@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/main.dart';
+import 'package:fixly_app/services/building_context_service.dart';
 
 // ============================================================
 //  LibraryScreen — библиотека нормативных документов ЖК
@@ -65,13 +66,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (uid == null) return;
     try {
       final p = await _supabase
-          .from('profiles').select('role').eq('id', uid).maybeSingle();
+          .from('profiles').select('role, user_type').eq('id', uid).maybeSingle();
+      // ВАЖНО: раньше сравнивали строго с 'chairman'. Но register_page.dart
+      // сохраняет роль председателя как 'osi' (значение из формы выбора
+      // роли "Председатель ОСИ"), поэтому реальные председатели никогда
+      // не проходили эту проверку и не видели кнопку добавления документа.
       if (mounted) {
-        // Та же проблема, что и в announcements_screen.dart: председатель
-        // может иметь роль 'osi' (так пишет register_page.dart), а не
-        // только 'chairman'.
-        final role = p?['role']?.toString();
-        setState(() => _isChairman = role == 'chairman' || role == 'osi');
+        setState(() => _isChairman = BuildingContextService.normalizeRoleKey(
+              p?['role']?.toString(),
+              p?['user_type']?.toString(),
+            ) ==
+            'chairman');
       }
     } catch (_) {}
   }

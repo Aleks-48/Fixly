@@ -101,15 +101,24 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
     });
 
     try {
-      // analyzeDefect теперь возвращает строго типизированный YoloResult
-      // (раньше была заглушка + ненадёжный `as YoloResult?`).
-      final result = await YoloService.analyzeDefect(image);
+      // ВАЖНО: раньше вызывался YoloService.analyzeDefect(image) — метод
+      // был пустой заглушкой (`async {}`, всегда возвращает null), а
+      // результат приводился к типу YoloResult, определённому локально
+      // прямо в этом файле (дублируя DefectDetection из yolo_service.dart
+      // с другим набором полей). Поскольку analyzeDefect всегда отдавал
+      // null, каст `as YoloResult?` тривиально проходил, но result был
+      // всегда null — сканер никогда не находил дефекты, при любом фото.
+      // Настоящая рабочая реализация (реальный вызов backend) лежит в
+      // YoloService.analyzeImage() и всегда была не задействована.
+      final detections = await YoloService.analyzeImage(image);
 
       if (mounted) {
         setState(() {
-          _detections = result.detections;
-          _masterCategory = result.masterCategory;
-          _recommendationRu = result.recommendation;
+          _detections = detections;
+          _masterCategory = YoloService.recommendSpecialty(detections);
+          _recommendationRu = detections.isEmpty
+              ? null
+              : detections.first.suggestion;
         });
       }
     } catch (e) {
@@ -446,7 +455,12 @@ class _BBoxPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
-// YoloResult и DefectDetection теперь определены в yolo_service.dart
-// (импортирован выше) — раньше здесь были дублирующие локальные классы
-// с другим набором полей, из-за чего analyzeDefect() и этот экран были
-// несовместимы по типам и приходилось делать ненадёжный `as YoloResult?`.
+// ВАЖНО: раньше здесь дублировались классы YoloResult и DefectDetection,
+// с другим набором полей, чем в yolo_service.dart (не было label, labelKz,
+// severity, suggestion). Локальное объявление DefectDetection в этом же
+// файле "затеняло" импортированный класс из yolo_service.dart — из-за
+// этого _detections на самом деле хранил экземпляры совсем другого,
+// более бедного класса, а YoloService.analyzeImage() (реальный вызов
+// backend) не мог быть использован напрямую без явного приведения типов.
+// Теперь DefectDetection везде в этом файле — это класс из
+// yolo_service.dart (см. import вверху), YoloResult больше не нужен.

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/main.dart'; 
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/settings/settings_page.dart';
+import 'package:fixly_app/screens/portfolio_screen.dart';
+import 'package:fixly_app/screens/verification_screen.dart';
+import 'package:fixly_app/services/profile_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -21,6 +26,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String userStreet = "";
   String userHouse = "";
   String userApartment = "";
+  String userAvatarUrl = "";
+  bool _isUploadingAvatar = false;
 
   bool _isLoading = true;
   bool _isOnline = true;
@@ -39,7 +46,7 @@ class _ProfilePageState extends State<ProfilePage> {
       try {
         final data = await supabase
             .from('profiles')
-            .select('role, user_type, name, first_name, last_name, avg_rating, bin, org_name, is_online, city, street, house, apartment') 
+            .select('role, user_type, name, first_name, last_name, avg_rating, bin, org_name, is_online, city, street, house, apartment, avatar_url') 
             .eq('id', user.id)
             .maybeSingle();
         
@@ -60,6 +67,7 @@ class _ProfilePageState extends State<ProfilePage> {
             userStreet = data?['street']?.toString() ?? "";
             userHouse = data?['house']?.toString() ?? "";
             userApartment = data?['apartment']?.toString() ?? "";
+            userAvatarUrl = data?['avatar_url']?.toString() ?? "";
             
             _isOnline = data?['is_online'] ?? true;
             
@@ -150,6 +158,36 @@ class _ProfilePageState extends State<ProfilePage> {
       }
     } catch (e) {
       debugPrint("Ошибка статуса: $e");
+    }
+  }
+
+  // ВАЖНО: раньше ProfileService.uploadAvatar() был полностью реализован
+  // (загрузка в Storage + обновление profiles.avatar_url), но нигде в
+  // UI не было кнопки, которая бы его вызывала — аватар всегда
+  // отображался как иконка-заглушка.
+  Future<void> _pickAndUploadAvatar() async {
+    final xf = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+      maxWidth: 800,
+    );
+    if (xf == null) return;
+
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final url = await ProfileService.uploadAvatar(File(xf.path));
+      if (mounted && url != null) {
+        setState(() => userAvatarUrl = url);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Фото профиля обновлено"), backgroundColor: Colors.green),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Не удалось загрузить фото"), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
     }
   }
 
@@ -244,6 +282,23 @@ class _ProfilePageState extends State<ProfilePage> {
                             onTap: () => _showEditFieldDialog(userBin, "БИН / ИИН", 'bin'),
                           ),
 
+                        // ВАЖНО: раньше verification_screen.dart (загрузка
+                        // документов, статус проверки) существовал, но
+                        // никуда не был подключён — мастер физически не
+                        // мог попасть на верификацию.
+                        if (userRoleLocal == 'master')
+                          _buildListTile(
+                            LucideIcons.shieldCheck,
+                            lang == 'ru' ? "Верификация" : "Верификация",
+                            lang == 'ru' ? "Подтвердите профиль" : "Профильді растаңыз",
+                            isDark: isDark,
+                            isEditable: true,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const VerificationScreen()),
+                            ),
+                          ),
+
                         _buildListTile(
                           LucideIcons.map, 
                           lang == 'ru' ? "Город" : "Қала", 
@@ -322,7 +377,32 @@ class _ProfilePageState extends State<ProfilePage> {
               child: CircleAvatar(
                 radius: 55,
                 backgroundColor: isDark ? const Color(0xFF2C2C2E) : Colors.grey[300],
-                child: Icon(LucideIcons.user, size: 55, color: isDark ? Colors.white24 : Colors.black26),
+                backgroundImage: userAvatarUrl.isNotEmpty
+                    ? NetworkImage(userAvatarUrl)
+                    : null,
+                child: userAvatarUrl.isEmpty
+                    ? Icon(LucideIcons.user, size: 55, color: isDark ? Colors.white24 : Colors.black26)
+                    : null,
+              ),
+            ),
+            // Кнопка смены фото — раньше не существовала, аватар был
+            // навсегда заглушкой.
+            GestureDetector(
+              onTap: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                margin: const EdgeInsets.only(right: 60),
+                decoration: BoxDecoration(
+                  color: accent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: isDark ? const Color(0xFF0F0F10) : Colors.white, width: 2),
+                ),
+                child: _isUploadingAvatar
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(LucideIcons.camera, size: 14, color: Colors.white),
               ),
             ),
             CircleAvatar(
@@ -457,7 +537,26 @@ class _ProfilePageState extends State<ProfilePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionLabel(lang == 'ru' ? "ВАШИ РАБОТЫ" : "ЖҰМЫСТАРЫҢЫЗ", isDark),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildSectionLabel(lang == 'ru' ? "ВАШИ РАБОТЫ" : "ЖҰМЫСТАРЫҢЫЗ", isDark),
+            // ВАЖНО: раньше здесь не было способа добавить работу —
+            // portfolio_screen.dart (загрузка фото, описание, удаление)
+            // существовал в проекте, но никуда не был подключён.
+            TextButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PortfolioScreen()),
+                );
+                if (mounted) setState(() {}); // обновить превью после возврата
+              },
+              icon: const Icon(LucideIcons.plus, size: 16),
+              label: Text(lang == 'ru' ? "Добавить" : "Қосу"),
+            ),
+          ],
+        ),
         SizedBox(
           height: 160,
           child: FutureBuilder<List<Map<String, dynamic>>>(

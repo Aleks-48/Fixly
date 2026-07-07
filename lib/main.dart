@@ -12,6 +12,7 @@ import 'package:fixly_app/theme/app_theme.dart';
 import 'package:fixly_app/screens/login_page.dart';
 import 'package:fixly_app/screens/register_page.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
+import 'package:fixly_app/screens/splash_screen.dart';
 import 'package:fixly_app/screens/masters_list_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -128,7 +129,11 @@ class MyApp extends StatelessWidget {
             page = const MastersListScreen();
             break;
           default:
-            page = const AuthGate();
+            // Раньше здесь сразу был AuthGate — красивый анимированный
+            // SplashScreen существовал в проекте, но никогда не
+            // показывался пользователю. Теперь он играет роль первого
+            // экрана и сам передаёт эстафету AuthGate по завершении.
+            page = const SplashScreen();
         }
         return MaterialPageRoute(
           builder: (context) => page, 

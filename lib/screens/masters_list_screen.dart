@@ -12,10 +12,16 @@ class MastersListScreen extends StatefulWidget {
   State<MastersListScreen> createState() => _MastersListScreenState();
 }
 
-class _MastersListScreenState extends State<MastersListScreen> {
+class _MastersListScreenState extends State<MastersListScreen>
+    with SingleTickerProviderStateMixin {
   final _supabase = Supabase.instance.client;
   final _searchCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+
+  late final AnimationController _shimmerCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat();
 
   List<UserModel> _masters = [];
   bool _isLoading = true;
@@ -56,6 +62,7 @@ class _MastersListScreenState extends State<MastersListScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _scrollCtrl.dispose();
+    _shimmerCtrl.dispose();
     super.dispose();
   }
 
@@ -68,6 +75,36 @@ class _MastersListScreenState extends State<MastersListScreen> {
   }
 
   // ── ЗАГРУЗКА (ИСПРАВЛЕННАЯ ЛОГИКА) ────────────────────────────
+  //
+  // ВАЖНО: диагностика (raw SQL) показала, что колонки 'specialty' в
+  // реальной таблице profiles в Supabase попросту не существует, хотя
+  // весь код мастеров (этот экран, market_screen.dart,
+  // profile_service.dart) явно указывает её и в select(), и в фильтрах.
+  // PostgREST возвращает PostgrestException ещё до выполнения запроса,
+  // а весь catch(e) ниже эту ошибку молча проглатывал — список мастеров
+  // просто оставался пустым без единого сообщения об ошибке.
+  //
+  // Без миграции БД (по договорённости — правим только приложение)
+  // делаем запрос отказоустойчивым: если Supabase жалуется на
+  // конкретную несуществующую колонку, автоматически убираем её из
+  // списка полей и фильтров и повторяем запрос. Это защищает не только
+  // от 'specialty', но и от любой другой колонки, которой вдруг не
+  // окажется в реальной схеме (is_verified, price_from и т.д.).
+  static const _mastersSelectColumns = [
+    'id', 'full_name', 'specialty', 'avatar_url', 'rating', 'reviews_count',
+    'price_from', 'experience_years', 'is_verified', 'is_available', 'description',
+  ];
+
+  final Set<String> _missingColumns = {};
+
+  /// Достаёт имя недостающей колонки из текста ошибки PostgREST вида
+  /// "column profiles.specialty does not exist" -> "specialty".
+  String? _extractMissingColumn(Object error) {
+    final match = RegExp(r'column [\w]+\.([\w]+) does not exist')
+        .firstMatch(error.toString());
+    return match?.group(1);
+  }
+
   Future<void> _load({bool reset = false}) async {
     if (reset) {
       setState(() {
@@ -81,59 +118,75 @@ class _MastersListScreenState extends State<MastersListScreen> {
       setState(() => _isLoadingMore = true);
     }
 
-    try {
-      // 1. Инициализация и выбор полей (используем var для PostgrestFilterBuilder)
-      var query = _supabase
-          .from('profiles')
-          // ВАЖНО: раньше здесь не было поля 'phone'. MasterDetailPage
-          // читает widget.masterData['phone'] для кнопки звонка — без
-          // этого поля кнопка "Позвонить" молча ничего не делала.
-          .select('id, full_name, specialty, avatar_url, rating, reviews_count, '
-              'price_from, experience_years, phone, is_verified, is_available, description');
+    // До 6 попыток — на случай, если отсутствует сразу несколько колонок.
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        final columns = _mastersSelectColumns
+            .where((c) => !_missingColumns.contains(c))
+            .join(', ');
 
-      // 2. Базовые фильтры (обязательные)
-      query = query.eq('role', 'master').eq('is_verified', true);
+        var query = _supabase.from('profiles').select(columns);
 
-      // 3. Динамические фильтры (специализация)
-      if (_selectedSpec != null) {
-        query = query.eq('specialty', _selectedSpec!);
-      }
+        // Базовые фильтры (обязательные), пропускаем те, что ссылаются
+        // на подтверждённо отсутствующую колонку.
+        query = query.eq('role', 'master');
+        if (!_missingColumns.contains('is_verified')) {
+          query = query.eq('is_verified', true);
+        }
 
-      // 4. Поиск по имени
-      final searchText = _searchCtrl.text.trim();
-      if (searchText.isNotEmpty) {
-        query = query.ilike('full_name', '%$searchText%');
-      }
+        if (_selectedSpec != null && !_missingColumns.contains('specialty')) {
+          query = query.eq('specialty', _selectedSpec!);
+        }
 
-      // 5. Сортировка и пагинация вызываются прямо перед await
-      final response = await query
-          .order('rating', ascending: false)
-          .range(_page * _pageSize, (_page + 1) * _pageSize - 1);
-      
-      final loaded = (response as List<dynamic>)
-          .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
-          .toList();
+        final searchText = _searchCtrl.text.trim();
+        if (searchText.isNotEmpty) {
+          query = query.ilike('full_name', '%$searchText%');
+        }
 
-      if (mounted) {
-        setState(() {
-          if (reset) {
-            _masters = loaded;
-          } else {
-            _masters.addAll(loaded);
-          }
-          _hasMore = loaded.length == _pageSize;
-          _page++;
-          _isLoading = false;
-          _isLoadingMore = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('MastersListScreen load error: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isLoadingMore = false;
-        });
+        dynamic sortedQuery = query;
+        if (!_missingColumns.contains('rating')) {
+          sortedQuery = sortedQuery.order('rating', ascending: false);
+        }
+
+        final response = await sortedQuery
+            .range(_page * _pageSize, (_page + 1) * _pageSize - 1);
+
+        final loaded = (response as List<dynamic>)
+            .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
+            .toList();
+
+        if (mounted) {
+          setState(() {
+            if (reset) {
+              _masters = loaded;
+            } else {
+              _masters.addAll(loaded);
+            }
+            _hasMore = loaded.length == _pageSize;
+            _page++;
+            _isLoading = false;
+            _isLoadingMore = false;
+          });
+        }
+        return; // успех — выходим из цикла попыток
+      } catch (e) {
+        final missing = _extractMissingColumn(e);
+        if (missing != null && !_missingColumns.contains(missing)) {
+          debugPrint(
+              'MastersListScreen: колонки "$missing" нет в profiles — '
+              'повторяю запрос без неё (нужна миграция БД для полной '
+              'функциональности фильтрации/сортировки).');
+          _missingColumns.add(missing);
+          continue; // повторяем со следующей итерацией цикла
+        }
+        debugPrint('MastersListScreen load error: $e');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isLoadingMore = false;
+          });
+        }
+        return; // неустранимая ошибка — прекращаем попытки
       }
     }
   }
@@ -254,7 +307,10 @@ class _MastersListScreenState extends State<MastersListScreen> {
                                     child: Center(child: CircularProgressIndicator()),
                                   );
                                 }
-                                return _buildMasterCard(_masters[i], lang, isDark);
+                                return _StaggeredEntrance(
+                                  index: i,
+                                  child: _buildMasterCard(_masters[i], lang, isDark),
+                                );
                               },
                             ),
                           ),
@@ -269,15 +325,20 @@ class _MastersListScreenState extends State<MastersListScreen> {
   Widget _buildMasterCard(UserModel master, String lang, bool isDark) {
     final cardColor = isDark ? const Color(0xFF1A1A1C) : Colors.white;
 
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MasterDetailPage(masterData: master.toMap()),
-        ),
-      ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => MasterDetailPage(masterData: master.toMap()),
+            ),
+          ),
+          child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: cardColor,
@@ -359,6 +420,8 @@ class _MastersListScreenState extends State<MastersListScreen> {
             const Icon(LucideIcons.chevronRight, size: 18, color: Colors.grey),
           ],
         ),
+          ),
+        ),
       ),
     );
   }
@@ -371,34 +434,63 @@ class _MastersListScreenState extends State<MastersListScreen> {
   }
 
   Widget _buildSkeleton(bool isDark) {
-    final shimColor = isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade200;
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      itemCount: 6,
-      itemBuilder: (_, __) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(radius: 30, backgroundColor: shimColor),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    final baseColor = isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade200;
+    final highlightColor = isDark ? Colors.white.withOpacity(0.16) : Colors.white;
+
+    Widget bar({double width = double.infinity, double height = 14}) => Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: baseColor,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        );
+
+    return AnimatedBuilder(
+      animation: _shimmerCtrl,
+      builder: (context, _) {
+        // Диагональная волна блика бежит слева направо и зацикливается.
+        final sweep = _shimmerCtrl.value * 3 - 1; // от -1 до 2
+        return ShaderMask(
+          blendMode: BlendMode.srcATop,
+          shaderCallback: (rect) => LinearGradient(
+            colors: [baseColor, highlightColor, baseColor],
+            stops: const [0.35, 0.5, 0.65],
+            begin: Alignment(-1 + sweep, 0),
+            end: Alignment(0 + sweep, 0),
+          ).createShader(rect),
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+            itemCount: 6,
+            itemBuilder: (_, __) => Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
                 children: [
-                  Container(height: 14, width: 140, color: shimColor, margin: const EdgeInsets.only(bottom: 6)),
-                  Container(height: 12, width: 80, color: shimColor, margin: const EdgeInsets.only(bottom: 6)),
-                  Container(height: 10, width: 100, color: shimColor),
+                  CircleAvatar(radius: 30, backgroundColor: baseColor),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        bar(width: 140, height: 14),
+                        const SizedBox(height: 6),
+                        bar(width: 80, height: 12),
+                        const SizedBox(height: 6),
+                        bar(width: 100, height: 10),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -422,6 +514,60 @@ class _MastersListScreenState extends State<MastersListScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ============================================================
+//  _StaggeredEntrance — лёгкая каскадная анимация появления карточек
+//  Каждая следующая карточка списка стартует с небольшой задержкой
+//  относительно предыдущей: fade-in + сдвиг снизу вверх.
+// ============================================================
+class _StaggeredEntrance extends StatefulWidget {
+  const _StaggeredEntrance({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggeredEntrance> createState() => _StaggeredEntranceState();
+}
+
+class _StaggeredEntranceState extends State<_StaggeredEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+  );
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.08),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+  @override
+  void initState() {
+    super.initState();
+    // Ограничиваем максимальную задержку, чтобы длинные списки не
+    // "доигрывали" появление последних карточек по несколько секунд.
+    final delayMs = (widget.index * 45).clamp(0, 400);
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
     );
   }
 }

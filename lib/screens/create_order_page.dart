@@ -48,7 +48,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
   String? _errorMsg;
   String? _userApartment;
   String? _userAddress;
-  String? _userBuildingId;
+  String? _buildingId;
 
   // Специализации
   static const _categories = {
@@ -96,16 +96,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         final apt     = profile['apartment_number']?.toString() ?? '';
         final building = (profile['buildings'] as Map?)??{};
         final addr    = building['address']?.toString() ?? '';
-        // ВАЖНО: раньше building_id запрашивался из профиля, но никуда
-        // не сохранялся и не попадал в создаваемую заявку. tasks.building_id
-        // оставался NULL у каждой новой заявки — председатель (после
-        // фикса cross-tenant утечки в orders_page.dart, который стал
-        // фильтровать заявки по дому) вообще не видел бы ни одной новой
-        // заявки, потому что NULL никогда не проходит .eq('building_id', ...).
-        _userBuildingId = profile['building_id']?.toString();
         setState(() {
           _userApartment = apt;
           _userAddress   = addr;
+          _buildingId    = profile['building_id']?.toString();
           if (_addrCtrl.text.isEmpty && addr.isNotEmpty) {
             _addrCtrl.text = addr;
           }
@@ -191,6 +185,16 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         'created_at'   : DateTime.now().toIso8601String(),
       };
 
+      // ВАЖНО: раньше building_id вообще не передавался при создании
+      // заявки, хотя в _loadUserProfile() он уже загружался из profiles
+      // и просто отбрасывался. chairman_home_screen.dart и orders_page.dart
+      // (для роли chairman) фильтруют список заявок дома строго по
+      // .eq('building_id', ...) — заявки без building_id были невидимы
+      // председателю несмотря на сообщение "Заявка создана!".
+      if (_buildingId != null && _buildingId!.isNotEmpty) {
+        data['building_id'] = _buildingId;
+      }
+
       // Цена (опционально)
       final priceText = _priceCtrl.text.trim();
       if (priceText.isNotEmpty) {
@@ -206,12 +210,6 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       // Квартира из профиля
       if (_userApartment != null && _userApartment!.isNotEmpty) {
         data['apartment'] = _userApartment;
-      }
-
-      // Дом из профиля — критично для видимости заявки председателю
-      // (см. orders_page.dart, который фильтрует заявки по building_id)
-      if (_userBuildingId != null && _userBuildingId!.isNotEmpty) {
-        data['building_id'] = _userBuildingId;
       }
 
       if (imageUrl != null) data['image_url'] = imageUrl;

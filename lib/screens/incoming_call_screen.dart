@@ -48,6 +48,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   Timer? _timeoutTimer;       // Таймер для автосброса
   bool _isActing = false;     // Флаг блокировки кнопок (предотвращает двойные нажатия)
   Map<String, dynamic>? _callData; // Данные звонка из БД
+  RealtimeChannel? _statusChannel; // Собственный канал этого экрана
 
   // Контроллер анимации для эффекта пульсации
   late AnimationController _pulseController;
@@ -105,7 +106,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   /// Слушаем изменения в таблице calls.
   /// Если вызывающий сбросил звонок (статус 'ended' или 'declined'), закрываем экран.
   void _listenToCallStatus() {
-    _supabase
+    _statusChannel = _supabase
       .channel('public:calls:id=eq.${widget.callId}')
       .onPostgresChanges(
         event: PostgresChangeEvent.update,
@@ -150,12 +151,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
             builder: (_) => CallScreen(
               taskId: widget.taskId,
               hasVideo: _callData?['has_video'] == true, 
-              userName: '', 
-              avatarUrl: '', 
-              remoteUserId: '', 
-              remoteUserName: '', 
-              taskTitle: '', 
-              isIncoming: true, // ИСПРАВЛЕНО ЗДЕСЬ: null заменен на true
+              userName: widget.callerName, 
+              avatarUrl: widget.callerAvatar ?? '', 
+              remoteUserId: widget.callerId, 
+              remoteUserName: widget.callerName, 
+              taskTitle: widget.taskTitle, 
+              isIncoming: true,
+              callId: widget.callId,
             ),
           ),
         );
@@ -197,7 +199,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   void _cleanup() {
     _timeoutTimer?.cancel();
     SoundService.instance.stopRinging();
-    _supabase.removeAllChannels(); // Отписка от realtime
+    // ВАЖНО: раньше здесь был _supabase.removeAllChannels() — это
+    // глобально обрывает ВСЕ realtime-подписки в приложении, а не только
+    // канал этого экрана. Если в этот момент где-то ещё был активен
+    // живой стрим (например, чат в chat_screen.dart), он тоже тихо
+    // переставал получать обновления. Теперь отписываемся только от
+    // своего собственного канала.
+    _statusChannel?.unsubscribe();
   }
 
   @override

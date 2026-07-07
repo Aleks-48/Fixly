@@ -20,6 +20,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   List<Map<String, dynamic>> _filtered = [];
   bool _isLoading  = true;
   bool _isChairman = false;
+  String? _buildingId;
 
   // Отдельные каналы для insert/delete (нет .all в 2.x)
   RealtimeChannel? _insertChannel;
@@ -47,16 +48,19 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
     try {
       final p = await _supabase
           .from('profiles')
-          .select('role')
+          .select('role, user_type')
           .eq('id', uid)
           .maybeSingle();
+      // ВАЖНО: раньше сравнивали строго с 'chairman'. register_page.dart
+      // сохраняет роль председателя как 'osi', поэтому реальные
+      // председатели никогда не проходили эту проверку и не видели
+      // FAB "создать объявление" и кнопку удаления.
       if (mounted) {
-        // Регистрация (register_page.dart) сохраняет роль председателя как
-        // 'osi', а не 'chairman'. Раньше проверялось только 'chairman',
-        // из-за чего председатели с ролью 'osi' не видели кнопку создания
-        // и удаления объявлений.
-        final role = p?['role']?.toString();
-        setState(() => _isChairman = role == 'chairman' || role == 'osi');
+        setState(() => _isChairman = BuildingContextService.normalizeRoleKey(
+              p?['role']?.toString(),
+              p?['user_type']?.toString(),
+            ) ==
+            'chairman');
       }
     } catch (_) {}
   }
@@ -64,23 +68,30 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   Future<void> _loadAnnouncements() async {
     setState(() => _isLoading = true);
     try {
-      // ВАЖНО: раньше здесь не было фильтра по дому — все жители и
-      // мастера видели ВСЕ объявления из ВСЕХ ЖК в системе (в том числе
-      // "срочные"), хотя при создании объявление привязывается к
-      // конкретному building_id (main_wrapper.dart,
-      // create_announcement_screen.dart). Это утечка данных между домами:
-      // житель дома А видел уведомления, адресованные дому Б.
-      final buildingId = await BuildingContextService.currentBuildingId();
+      // ВАЖНО: раньше запрос не фильтровался по building_id вообще —
+      // это регресс той же категории "cross-tenant data leak", что уже
+      // чинили в orders_page.dart / resident_home_page.dart /
+      // chairman_Analytics_Screen.dart. Жители и председатели одного
+      // дома видели объявления ВСЕХ домов в системе. Получаем building_id
+      // текущего пользователя через BuildingContextService и фильтруем.
+      final context = await BuildingContextService.loadCurrent();
+      _buildingId = context?.buildingId;
 
-      var query = _supabase
-          .from('announcements')
-          .select('id, title, content, author_id, is_urgent, created_at');
-
-      if (buildingId != null && buildingId.isNotEmpty) {
-        query = query.eq('building_id', buildingId);
+      if (_buildingId == null || _buildingId!.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _all = [];
+            _filtered = [];
+            _isLoading = false;
+          });
+        }
+        return;
       }
 
-      final resp = await query
+      final resp = await _supabase
+          .from('announcements')
+          .select('id, title, content, author_id, is_urgent, created_at')
+          .eq('building_id', _buildingId!)
           .order('is_urgent', ascending: false)
           .order('created_at', ascending: false);
       if (mounted) {
@@ -210,22 +221,18 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                   ),
                   onPressed: () async {
                     if (titleCtrl.text.trim().isEmpty) return;
+                    if (_buildingId == null || _buildingId!.isEmpty) {
+                      debugPrint('create ann: no building_id for current user');
+                      return;
+                    }
                     try {
-                      // ВАЖНО: раньше объявление создавалось без
-                      // building_id вообще. Теперь, когда чтение
-                      // объявлений фильтруется по дому (см.
-                      // _loadAnnouncements), объявление без building_id
-                      // просто не попадёт ни в чью ленту — нужно
-                      // проставлять его при создании.
-                      final buildingId =
-                          await BuildingContextService.currentBuildingId();
                       await _supabase.from('announcements').insert({
-                        'title'    : titleCtrl.text.trim(),
-                        'content'  : contentCtrl.text.trim(),
-                        'author_id': _supabase.auth.currentUser?.id,
-                        'is_urgent': isUrgent,
-                        'building_id': buildingId,
-                        'created_at': DateTime.now().toIso8601String(),
+                        'title'      : titleCtrl.text.trim(),
+                        'content'    : contentCtrl.text.trim(),
+                        'author_id'  : _supabase.auth.currentUser?.id,
+                        'building_id': _buildingId,
+                        'is_urgent'  : isUrgent,
+                        'created_at' : DateTime.now().toIso8601String(),
                       });
                       if (ctx.mounted) Navigator.pop(ctx);
                     } catch (e) {

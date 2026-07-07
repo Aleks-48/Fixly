@@ -4,10 +4,10 @@ import 'package:fixly_app/main.dart'; // Предполагается, что з
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/services/pdf_report_service.dart';
 import 'package:fixly_app/services/ai_service.dart'; 
+import 'package:fixly_app/services/building_context_service.dart';
 import 'package:printing/printing.dart'; 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:fixly_app/services/building_context_service.dart';
 
 class ChairmanAnalyticsScreen extends StatefulWidget {
   const ChairmanAnalyticsScreen({super.key});
@@ -20,6 +20,11 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   // --- 1. ФИНАНСОВЫЕ ПОКАЗАТЕЛИ ---
   double _eosiBalance = 2450000;      // Текущий счет (ЕОСИ)
   double _capitalBalance = 5800000;   // Кап. ремонт
+  String? _buildingId;                // ВАЖНО: используется для фильтрации
+                                       // tasks/votes по дому — без этого
+                                       // весь экран показывал финансы и
+                                       // архив голосований по ВСЕМ домам
+                                       // системы разом (см. комментарии ниже).
   
   final TextEditingController _balanceController = TextEditingController();
   final TextEditingController _capitalController = TextEditingController();
@@ -55,7 +60,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchAiAnalysis();
+    _loadBuildingAndAnalysis();
+  }
+
+  Future<void> _loadBuildingAndAnalysis() async {
+    _buildingId = await BuildingContextService.currentBuildingId();
+    if (mounted) setState(() {});
+    await _fetchAiAnalysis();
   }
 
   @override
@@ -77,10 +88,18 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       final supabase = Supabase.instance.client;
       
       // Получаем историю последних выполненных задач
-      final List<Map<String, dynamic>> lastTasks = await supabase
+      // ВАЖНО: раньше запрос не фильтровался по дому вообще — AI получал
+      // на вход "последние расходы" вообще всех домов в системе Fixly,
+      // и финансовый прогноз/рекомендации председателю формировались на
+      // основе чужих трат. Теперь ограничиваем текущим домом.
+      var lastTasksQuery = supabase
           .from('tasks')
           .select()
-          .eq('status', 'completed')
+          .eq('status', 'completed') as dynamic;
+      if (_buildingId != null && _buildingId!.isNotEmpty) {
+        lastTasksQuery = lastTasksQuery.eq('building_id', _buildingId!);
+      }
+      final List<Map<String, dynamic>> lastTasks = await lastTasksQuery
           .order('created_at', ascending: false)
           .limit(15);
 
@@ -234,29 +253,17 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     setState(() => _isGeneratingPdf = true);
     try {
       final supabase = Supabase.instance.client;
-
-      // ВАЖНО: раньше здесь было supabase.from('votes').select() без
-      // единого фильтра — это тянуло ВСЕ голоса из базы, по всем домам и
-      // всем голосованиям сразу, включая подписи (signature_url) жителей
-      // чужих ОСИ. Председатель дома A получал в своём отчёте персональные
-      // данные жителей дома B — утечка данных между жилыми комплексами.
-      // Теперь ограничиваем выборку домом текущего председателя.
-      final buildingCtx = await BuildingContextService.loadCurrent();
-      final buildingId = buildingCtx?.buildingId;
-
-      if (buildingId == null || buildingId.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text("Нет привязки к дому — невозможно сформировать отчёт")));
-        }
-        setState(() => _isGeneratingPdf = false);
-        return;
+      // ВАЖНО: раньше запрос тянул ВСЕ голоса из таблицы votes без
+      // единого фильтра — "Лист голосования" в PDF содержал подписи и
+      // решения жителей вообще всех домов системы Fixly, а не только
+      // текущего. Фильтруем по building_id (эта колонка уже пишется в
+      // voting_service.dart при голосовании).
+      List<Map<String, dynamic>> votes = [];
+      if (_buildingId != null && _buildingId!.isNotEmpty) {
+        votes = List<Map<String, dynamic>>.from(
+          await supabase.from('votes').select().eq('building_id', _buildingId!),
+        );
       }
-
-      final List<Map<String, dynamic>> votes = await supabase
-          .from('votes')
-          .select()
-          .eq('building_id', buildingId);
       
       List<Map<String, dynamic>> preparedVotes = [];
       for (var v in votes) {
@@ -355,9 +362,32 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           ),
           body: Stack(
             children: [
+              // ВАЖНО: раньше стрим не фильтровался по дому — "Освоено",
+              // "Статус дома" и здоровье дома считались по ВСЕМ заявкам
+              // системы Fixly, а не только текущего дома. Председатель
+              // видел чужие суммы и чужую статистику завершённости.
               StreamBuilder<List<Map<String, dynamic>>>(
-                stream: supabase.from('tasks').stream(primaryKey: ['id']),
+                stream: _buildingId != null && _buildingId!.isNotEmpty
+                    ? supabase
+                        .from('tasks')
+                        .stream(primaryKey: ['id'])
+                        .eq('building_id', _buildingId!)
+                    : const Stream<List<Map<String, dynamic>>>.empty(),
                 builder: (context, snapshot) {
+                  if (_buildingId == null || _buildingId!.isEmpty) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          lang == 'ru'
+                              ? 'Дом не привязан к профилю — аналитика недоступна'
+                              : 'Үй профильге тіркелмеген — аналитика қолжетімсіз',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    );
+                  }
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
                   final tasks = snapshot.data!;

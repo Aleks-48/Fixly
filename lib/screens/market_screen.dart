@@ -37,29 +37,73 @@ class _MarketScreenState extends State<MarketScreen> {
     ('general',     'Другое',        'Басқа',          LucideIcons.wrench,       Color(0xFF64748B)),
   ];
 
+  final Set<String> _missingColumns = {};
+
+  /// Достаёт имя недостающей колонки из текста ошибки PostgREST вида
+  /// "column profiles.specialty does not exist" -> "specialty".
+  /// См. подробное объяснение в masters_list_screen.dart — та же
+  /// проблема рассинхронизации схемы profiles, чинится тем же способом
+  /// без миграции БД.
+  String? _extractMissingColumn(Object error) {
+    final match = RegExp(r'column [\w]+\.([\w]+) does not exist')
+        .firstMatch(error.toString());
+    return match?.group(1);
+  }
+
   Future<void> _loadMasters(String spec) async {
     setState(() { _selectedSpec = spec; _isLoadingMasters = true; });
-    try {
-      final resp = await _supabase
-          .from('profiles')
-          // Раньше без 'phone' — кнопка звонка на MasterDetailPage не работала.
-          .select('id, full_name, specialty, avatar_url, rating, reviews_count, price_from, phone, is_verified, is_available, description, experience_years')
-          .eq('role', 'master')
-          .eq('is_verified', true)
-          .eq('specialty', spec)
-          .order('rating', ascending: false)
-          .limit(20);
-      if (mounted) {
-        setState(() {
-          _masters = (resp as List)
-              .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
-              .toList();
-          _isLoadingMasters = false;
-        });
+
+    const allColumns = [
+      'id', 'full_name', 'specialty', 'avatar_url', 'rating', 'reviews_count',
+      'price_from', 'is_verified', 'is_available', 'description', 'experience_years',
+    ];
+
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        final columns = allColumns
+            .where((c) => !_missingColumns.contains(c))
+            .join(', ');
+
+        var query = _supabase.from('profiles').select(columns);
+        query = query.eq('role', 'master');
+        if (!_missingColumns.contains('is_verified')) {
+          query = query.eq('is_verified', true);
+        }
+        // Если колонки specialty реально нет в схеме — фильтровать по ней
+        // невозможно. Показываем всех мастеров без разбивки по категории,
+        // это лучше пустого списка.
+        if (!_missingColumns.contains('specialty')) {
+          query = query.eq('specialty', spec);
+        }
+
+        dynamic sortedQuery = query;
+        if (!_missingColumns.contains('rating')) {
+          sortedQuery = sortedQuery.order('rating', ascending: false);
+        }
+
+        final resp = await sortedQuery.limit(20);
+        if (mounted) {
+          setState(() {
+            _masters = (resp as List)
+                .map((e) => UserModel.fromMap(e as Map<String, dynamic>))
+                .toList();
+            _isLoadingMasters = false;
+          });
+        }
+        return;
+      } catch (e) {
+        final missing = _extractMissingColumn(e);
+        if (missing != null && !_missingColumns.contains(missing)) {
+          debugPrint(
+              'MarketScreen: колонки "$missing" нет в profiles — '
+              'повторяю запрос без неё.');
+          _missingColumns.add(missing);
+          continue;
+        }
+        debugPrint('MarketScreen: $e');
+        if (mounted) setState(() => _isLoadingMasters = false);
+        return;
       }
-    } catch (e) {
-      debugPrint('MarketScreen: $e');
-      if (mounted) setState(() => _isLoadingMasters = false);
     }
   }
 

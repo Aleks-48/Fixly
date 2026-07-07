@@ -30,6 +30,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   List<Map<String, dynamic>> _announcements = [];
   List<Map<String, dynamic>> _myOrders      = [];
   bool _isLoading = true;
+  String? _buildingId;
 
   @override
   void initState() {
@@ -42,6 +43,12 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
     try {
+      // ВАЖНО: получаем building_id ДО параллельных запросов, потому что
+      // _loadAnnouncements() и _loadStats() (голосования) фильтруют по
+      // нему — без этого житель видел объявления и счётчик голосований
+      // по всем домам системы сразу (тот же класс бага cross-tenant
+      // leak, что уже чинили в orders_page.dart и других экранах).
+      _buildingId = await BuildingContextService.currentBuildingId();
       await Future.wait([
         _loadProfile(uid),
         _loadAnnouncements(),
@@ -73,19 +80,15 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   }
 
   Future<void> _loadAnnouncements() async {
+    if (_buildingId == null || _buildingId!.isEmpty) {
+      if (mounted) setState(() => _announcements = []);
+      return;
+    }
     try {
-      // Та же проблема, что и в announcements_screen.dart: без фильтра по
-      // дому житель видел объявления вообще всех ЖК в системе.
-      final buildingId = await BuildingContextService.currentBuildingId();
-      var query = _supabase
+      final resp = await _supabase
           .from('announcements')
-          .select('id, title, content, created_at, is_urgent');
-
-      if (buildingId != null && buildingId.isNotEmpty) {
-        query = query.eq('building_id', buildingId);
-      }
-
-      final resp = await query
+          .select('id, title, content, created_at, is_urgent')
+          .eq('building_id', _buildingId!)
           .order('is_urgent', ascending: false)
           .order('created_at', ascending: false)
           .limit(3);
@@ -121,10 +124,16 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .select('id')
           .eq('role', 'master')
           .eq('is_verified', true);
-      final votes = await _supabase
+      // ВАЖНО: раньше .eq('status', 'active') не сопровождался фильтром
+      // по building_id — счётчик "Голосований" на главной жителя считал
+      // активные голосования по ВСЕМ домам в системе, а не по его дому.
+      final votesQuery = _supabase
           .from('proposals')
           .select('id')
           .eq('status', 'active');
+      final votes = (_buildingId != null && _buildingId!.isNotEmpty)
+          ? await votesQuery.eq('building_id', _buildingId!)
+          : <dynamic>[];
       if (mounted) {
         setState(() {
           _mastersCount = (masters as List).length;

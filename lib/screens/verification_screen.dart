@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
+import 'package:fixly_app/services/building_context_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 // ============================================================
@@ -53,61 +54,120 @@ class _VerificationScreenState extends State<VerificationScreen> {
     _loadCurrentStatus();
   }
 
+  // ВАЖНО: диагностика показала, что колонки 'specialty' нет в реальной
+  // таблице profiles в Supabase. Раньше ОБА запроса ниже (свой профиль
+  // и очередь председателя на верификацию) были в одном try/catch —
+  // ошибка на первом же select() из-за отсутствующей 'specialty'
+  // проглатывалась целиком, _isChairman оставался false (значение по
+  // умолчанию), и председатель вообще не попадал в свою ветку экрана —
+  // видел форму мастера вместо очереди одобрения заявок. Без миграции
+  // БД (правим только приложение) делаем оба запроса отказоустойчивыми:
+  // при ошибке "column ... does not exist" убираем эту колонку и
+  // повторяем запрос.
+  final Set<String> _missingColumns = {};
+
+  String? _extractMissingColumn(Object error) {
+    final match = RegExp(r'column [\w.]*\.([\w]+) does not exist')
+        .firstMatch(error.toString());
+    return match?.group(1);
+  }
+
   Future<void> _loadCurrentStatus() async {
     setState(() => _isLoading = true);
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
 
+    Map<String, dynamic>? profile;
+    for (var attempt = 0; attempt < 6; attempt++) {
+      final cols = ['role', 'user_type', 'is_verified', 'specialty', 'description', 'experience_years']
+          .where((c) => !_missingColumns.contains(c))
+          .join(', ');
+      try {
+        profile = await _supabase
+            .from('profiles')
+            .select(cols)
+            .eq('id', uid)
+            .maybeSingle();
+        break;
+      } catch (e) {
+        final missing = _extractMissingColumn(e);
+        if (missing != null && !_missingColumns.contains(missing)) {
+          _missingColumns.add(missing);
+          continue;
+        }
+        debugPrint('VerificationScreen profile load: $e');
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+    }
+
+    final isChairman = BuildingContextService.normalizeRoleKey(
+          profile?['role']?.toString(),
+          profile?['user_type']?.toString(),
+        ) ==
+        'chairman';
+
+    // Статус верификации из таблицы (эта таблица не завязана на
+    // profiles.specialty, отдельная ошибка тут маловероятна, но на
+    // всякий случай не роняем весь метод, если она всё же случится).
+    Map<String, dynamic>? verif;
     try {
-      final profile = await _supabase
-          .from('profiles')
-          .select('role, is_verified, specialty, description, experience_years')
-          .eq('id', uid)
-          .maybeSingle();
-
-      final isChairman = profile?['role'] == 'chairman';
-
-      // Статус верификации из таблицы
-      final verif = await _supabase
+      verif = await _supabase
           .from('verifications')
           .select('status')
           .eq('user_id', uid)
           .order('created_at', ascending: false)
           .limit(1)
           .maybeSingle();
-
-      String status = 'none';
-      if (profile?['is_verified'] == true) {
-        status = 'verified';
-      } else if (verif != null) {
-        status = verif['status']?.toString() ?? 'pending';
-      }
-
-      // Для председателя загружаем список ожидающих
-      List<Map<String, dynamic>> pending = [];
-      if (isChairman) {
-        final resp = await _supabase
-            .from('verifications')
-            .select('*, profiles!verifications_user_id_fkey(full_name, specialty, avatar_url, phone)')
-            .eq('status', 'pending')
-            .order('created_at');
-        pending = List<Map<String, dynamic>>.from(resp as List);
-      }
-
-      if (mounted) {
-        setState(() {
-          _isChairman   = isChairman;
-          _verifyStatus = status;
-          _selectedSpec = profile?['specialty']?.toString() ?? 'plumber';
-          _description  = profile?['description']?.toString() ?? '';
-          _experience   = profile?['experience_years']?.toString() ?? '';
-          _pendingMasters = pending;
-          _isLoading    = false;
-        });
-      }
     } catch (e) {
-      debugPrint('VerificationScreen load: $e');
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint('VerificationScreen verif status load: $e');
+    }
+
+    String status = 'none';
+    if (profile?['is_verified'] == true) {
+      status = 'verified';
+    } else if (verif != null) {
+      status = verif['status']?.toString() ?? 'pending';
+    }
+
+    // Для председателя загружаем список ожидающих — тоже отказоустойчиво,
+    // на случай что join на profiles(...) споткнётся о ту же 'specialty'.
+    List<Map<String, dynamic>> pending = [];
+    if (isChairman) {
+      for (var attempt = 0; attempt < 6; attempt++) {
+        final joinCols = ['full_name', 'specialty', 'avatar_url', 'phone']
+            .where((c) => !_missingColumns.contains(c))
+            .join(', ');
+        try {
+          final resp = await _supabase
+              .from('verifications')
+              .select('*, profiles!verifications_user_id_fkey($joinCols)')
+              .eq('status', 'pending')
+              .order('created_at');
+          pending = List<Map<String, dynamic>>.from(resp as List);
+          break;
+        } catch (e) {
+          final missing = _extractMissingColumn(e);
+          if (missing != null && !_missingColumns.contains(missing)) {
+            _missingColumns.add(missing);
+            continue;
+          }
+          debugPrint('VerificationScreen pending load: $e');
+          break;
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isChairman   = isChairman;
+        _verifyStatus = status;
+        _selectedSpec = profile?['specialty']?.toString() ?? 'plumber';
+        _description  = profile?['description']?.toString() ?? '';
+        _experience   = profile?['experience_years']?.toString() ?? '';
+        _pendingMasters = pending;
+        _isLoading    = false;
+      });
     }
   }
 
@@ -486,7 +546,9 @@ class _VerificationScreenState extends State<VerificationScreen> {
         final verifId = item['id']?.toString() ?? '';
         final userId  = item['user_id']?.toString() ?? '';
 
-        return Container(
+        return _StaggeredEntrance(
+          index: i,
+          child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -590,6 +652,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 ],
               ),
             ],
+          ),
           ),
         );
       },
@@ -796,4 +859,56 @@ class _VerificationScreenState extends State<VerificationScreen> {
         fontSize: 13, fontWeight: FontWeight.w600,
         color: isDark ? Colors.white60 : Colors.black54,
       ));
+}
+
+// ============================================================
+//  _StaggeredEntrance — та же лёгкая каскадная анимация появления
+//  карточек, что и в masters_list_screen.dart: fade-in + сдвиг снизу
+//  вверх, со ступенчатой задержкой по индексу элемента списка.
+// ============================================================
+class _StaggeredEntrance extends StatefulWidget {
+  const _StaggeredEntrance({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggeredEntrance> createState() => _StaggeredEntranceState();
+}
+
+class _StaggeredEntranceState extends State<_StaggeredEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+  );
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.08),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+  @override
+  void initState() {
+    super.initState();
+    final delayMs = (widget.index * 45).clamp(0, 400);
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
 }

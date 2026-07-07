@@ -26,6 +26,7 @@ import 'package:fixly_app/services/voting_service.dart';
 // нижней навигации (см. пояснение у _MainWrapperState.pages ниже).
 import 'package:fixly_app/screens/chairman_home_screen.dart';
 import 'package:fixly_app/screens/chairman_more_screen.dart';
+import 'package:fixly_app/screens/incoming_call_screen.dart';
 // Ядро и утилиты
 import 'package:fixly_app/core/sheber_ata_helper.dart';
 import 'package:fixly_app/main.dart'; 
@@ -50,16 +51,61 @@ class _MainWrapperState extends State<MainWrapper> {
   int _tutorialStep = 0;
   Map<String, String> _helperMessage = {}; 
 
+  // ВАЖНО: раньше в приложении не было НИ ОДНОГО глобального слушателя
+  // таблицы `calls` — incoming_call_screen.dart существовал, но никто
+  // никогда его не открывал. MainWrapper смонтирован всё время, пока
+  // пользователь в приложении, поэтому это правильное место для
+  // realtime-подписки на входящие звонки.
+  RealtimeChannel? _incomingCallChannel;
+
   @override
   void initState() {
     super.initState();
     _fetchUserRole();
+    _listenForIncomingCalls();
   }
 
   @override
   void dispose() {
     _audioPlayer.dispose();
+    _incomingCallChannel?.unsubscribe();
     super.dispose();
+  }
+
+  void _listenForIncomingCalls() {
+    final myId = Supabase.instance.client.auth.currentUser?.id;
+    if (myId == null) return;
+
+    _incomingCallChannel = Supabase.instance.client
+        .channel('incoming_calls_$myId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'calls',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'receiver_id',
+            value: myId,
+          ),
+          callback: (payload) {
+            final row = payload.newRecord;
+            if (row['status'] != 'ringing') return;
+            if (!mounted) return;
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => IncomingCallScreen(
+                  callId: row['id'].toString(),
+                  callerId: row['caller_id']?.toString() ?? '',
+                  callerName: row['caller_name']?.toString() ?? 'Пользователь',
+                  callerAvatar: row['caller_avatar']?.toString(),
+                  taskId: row['task_id']?.toString() ?? '',
+                  taskTitle: row['task_title']?.toString() ?? '',
+                ),
+              ),
+            );
+          },
+        )
+        .subscribe();
   }
 
   String _getCleanLang(String lang) {

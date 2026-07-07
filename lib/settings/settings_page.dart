@@ -5,6 +5,11 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; 
 import 'package:url_launcher/url_launcher.dart'; 
 import 'package:fixly_app/main.dart'; 
+// Раньше здесь ниже был встроенный дубль класса EditProfilePage без
+// нормальной валидации БИН — реальный edit_profile_page.dart с проверкой
+// "ровно 12 цифр" был написан, но никогда не подключался, потому что
+// Dart резолвил имя класса из локальной копии в этом же файле.
+import 'package:fixly_app/screens/edit_profile_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final String currentName;
@@ -241,104 +246,6 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
-
-// --- СТРАНИЦА РЕДАКТИРОВАНИЯ ПРОФИЛЯ ---
-class EditProfilePage extends StatefulWidget {
-  final String initialName;
-  final String initialBin;
-  const EditProfilePage({super.key, required this.initialName, required this.initialBin});
-
-  @override
-  State<EditProfilePage> createState() => _EditProfilePageState();
-}
-
-class _EditProfilePageState extends State<EditProfilePage> {
-  late TextEditingController _nameController;
-  late TextEditingController _binController;
-  bool _isSaving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.initialName);
-    _binController = TextEditingController(text: widget.initialBin);
-  }
-
-  Future<void> _updateProfile() async {
-    setState(() => _isSaving = true);
-    final supabase = Supabase.instance.client;
-    final userId = supabase.auth.currentUser?.id;
-
-    try {
-      await supabase.from('profiles').update({
-        'name': _nameController.text.trim(),
-        'bin': _binController.text.trim(),
-      }).eq('id', userId!);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Профиль обновлен!")));
-        Navigator.pop(context);
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Ошибка: $e")));
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(title: const Text("Редактирование", style: TextStyle(fontWeight: FontWeight.bold)), centerTitle: true, elevation: 0, backgroundColor: Colors.transparent),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          children: [
-            _buildPremiumTextField("Имя", LucideIcons.user, _nameController, isDark),
-            const SizedBox(height: 20),
-            _buildPremiumTextField("БИН/ИИН (12 цифр)", LucideIcons.creditCard, _binController, isDark, isNumber: true),
-            const SizedBox(height: 40),
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 5,
-                  shadowColor: Colors.blueAccent.withOpacity(0.5),
-                ),
-                onPressed: _isSaving ? null : _updateProfile,
-                child: _isSaving ? const CircularProgressIndicator(color: Colors.white) : const Text("СОХРАНИТЬ", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1)),
-              ),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPremiumTextField(String label, IconData icon, TextEditingController controller, bool isDark, {bool isNumber = false}) {
-    return TextField(
-      controller: controller,
-      keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-      maxLength: isNumber ? 12 : null,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Colors.blueAccent),
-        filled: true,
-        fillColor: isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade100,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.blueAccent, width: 2)),
-      ),
-    );
-  }
-}
-
 // --- СТРАНИЦА БЕЗОПАСНОСТИ ---
 class SecurityPage extends StatelessWidget {
   const SecurityPage({super.key});
