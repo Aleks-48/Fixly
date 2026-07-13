@@ -52,7 +52,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBe0dYZiPz93mMBW-RcObgsUzbZuhgOqz8',
-    appId: '1:700103731510:android:130be515b1e684eea6eb97',
+    appId: '1:700103731510:android:6b3d23de5feda1c6a6eb97',
     messagingSenderId: '700103731510',
     projectId: 'fixly-chat',
     storageBucket: 'fixly-chat.firebasestorage.app',

@@ -7,12 +7,25 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:700103731510:android:130be515b1e684eea6eb97",
+        "mobilesdk_app_id": "1:700103731510:android:6b3d23de5feda1c6a6eb97",
         "android_client_info": {
-          "package_name": "com.example.fixly_app"
+          "package_name": "com.aleks48.fixlyapp"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "700103731510-s7g9kgnp40tgvkbl4pppt9pnd8ljv4sv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aleks48.fixlyapp",
+            "certificate_hash": "d3639a99b45913334f477524385321c47f28a17b"
+          }
+        },
+        {
+          "client_id": "700103731510-je08vr3c7k6g693pbb1kd9mrdlr5v179.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBe0dYZiPz93mMBW-RcObgsUzbZuhgOqz8"
@@ -20,7 +33,63 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "700103731510-af2r3ua9fkbfmk2qhpd2en8lkcitq516.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.fixlyApp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:700103731510:android:130be515b1e684eea6eb97",
+        "android_client_info": {
+          "package_name": "com.example.fixly_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "700103731510-5obrbtap0dvslvq7vpok9coa3j1u4aj4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.fixly_app",
+            "certificate_hash": "d3639a99b45913334f477524385321c47f28a17b"
+          }
+        },
+        {
+          "client_id": "700103731510-je08vr3c7k6g693pbb1kd9mrdlr5v179.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBe0dYZiPz93mMBW-RcObgsUzbZuhgOqz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "700103731510-af2r3ua9fkbfmk2qhpd2en8lkcitq516.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.fixlyApp"
+              }
+            }
+          ]
         }
       }
     }

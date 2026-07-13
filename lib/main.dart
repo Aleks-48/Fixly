@@ -16,6 +16,7 @@ import 'package:fixly_app/screens/splash_screen.dart';
 import 'package:fixly_app/screens/masters_list_screen.dart';
 import 'firebase_options.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Глобальные нотификаторы для быстрого доступа из любой точки приложения
 final ValueNotifier<String> appLanguage = ValueNotifier<String>('ru');
@@ -58,6 +59,7 @@ Future<void> saveTokenToSupabase() async {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   
   // Инициализация сервисов
   await Future.wait([

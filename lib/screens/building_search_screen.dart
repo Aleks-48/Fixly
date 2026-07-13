@@ -241,24 +241,58 @@ class _BuildingSearchScreenState extends State<BuildingSearchScreen> {
       );
     }
 
-    // Если ввели 3+ символа, но ничего не нашли
-    if (_searchController.text.length >= 3) {
+    // Если ввели 3+ символа, но ничего не нашли — ни в базе Fixly, ни в OSM.
+    // ВАЖНО: раньше это был тупик — юзер видел "Адрес не найден" и не мог
+    // продвинуться дальше, если бесплатный Nominatim не ответил (таймаут,
+    // рейт-лимит, странный формат запроса — для Кокшетау, судя по всему,
+    // именно так и происходит). Добавили ручной ввод: дом создаётся по
+    // тексту, который ввёл юзер, без геокодинга (lat/lng — null,
+    // ChairmanBuildingSelectionScreen._createAndAttach уже это умеет).
+    if (_searchController.text.trim().length >= 3) {
       return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(LucideIcons.mapPinOff, size: 48, color: c.textTertiary),
-            const SizedBox(height: 16),
-            Text(
-              "Адрес не найден", 
-              style: TextStyle(color: c.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Попробуйте изменить запрос", 
-              style: TextStyle(color: c.textSecondary),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(LucideIcons.mapPinOff, size: 48, color: c.textTertiary),
+              const SizedBox(height: 16),
+              Text(
+                "Адрес не найден",
+                style: TextStyle(color: c.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Автопоиск адресов сейчас недоступен. Можно продолжить с введённым адресом вручную:",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: c.textSecondary),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context, {
+                      'id': null,
+                      'address': _searchController.text.trim(),
+                      'isNew': true,
+                    });
+                  },
+                  icon: Icon(LucideIcons.plusCircle, color: Colors.white),
+                  label: Text(
+                    'Создать дом «${_searchController.text.trim()}»',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: c.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ],
+          ),
         )
       );
     }

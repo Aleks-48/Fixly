@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/models/user_model.dart';
 import 'package:fixly_app/screens/master_Detail_Page.dart';
+import 'package:fixly_app/widgets/app_shimmer.dart';
 
 class MastersListScreen extends StatefulWidget {
   const MastersListScreen({super.key});
@@ -265,7 +266,7 @@ class _MastersListScreenState extends State<MastersListScreen>
                         label: Text(
                           entry.key,
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: 14,
                             color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
                           ),
                         ),
@@ -291,7 +292,7 @@ class _MastersListScreenState extends State<MastersListScreen>
               // Список
               Expanded(
                 child: _isLoading
-                    ? _buildSkeleton(isDark)
+                    ? _buildSkeleton()
                     : _masters.isEmpty
                         ? _buildEmpty(lang)
                         : RefreshIndicator(
@@ -404,13 +405,13 @@ class _MastersListScreenState extends State<MastersListScreen>
                       const Icon(Icons.star, size: 14, color: Colors.orange),
                       const SizedBox(width: 3),
                       Text(master.rating.toStringAsFixed(1),
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                       Text(' (${master.reviewsCount})',
-                          style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                          style: const TextStyle(fontSize: 14, color: Colors.grey)),
                       if (master.priceFrom != null) ...[
                         const SizedBox(width: 10),
                         Text('${lang == 'ru' ? 'от' : 'бастап'} ${master.priceFrom!.toInt()} ₸',
-                            style: const TextStyle(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+                            style: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
                       ],
                     ],
                   ),
@@ -433,64 +434,11 @@ class _MastersListScreenState extends State<MastersListScreen>
     return (lang == 'ru' ? ruMap[spec] : kzMap[spec]) ?? (lang == 'ru' ? 'Специалист' : 'Маман');
   }
 
-  Widget _buildSkeleton(bool isDark) {
-    final baseColor = isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade200;
-    final highlightColor = isDark ? Colors.white.withOpacity(0.16) : Colors.white;
-
-    Widget bar({double width = double.infinity, double height = 14}) => Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: baseColor,
-            borderRadius: BorderRadius.circular(6),
-          ),
-        );
-
-    return AnimatedBuilder(
-      animation: _shimmerCtrl,
-      builder: (context, _) {
-        // Диагональная волна блика бежит слева направо и зацикливается.
-        final sweep = _shimmerCtrl.value * 3 - 1; // от -1 до 2
-        return ShaderMask(
-          blendMode: BlendMode.srcATop,
-          shaderCallback: (rect) => LinearGradient(
-            colors: [baseColor, highlightColor, baseColor],
-            stops: const [0.35, 0.5, 0.65],
-            begin: Alignment(-1 + sweep, 0),
-            end: Alignment(0 + sweep, 0),
-          ).createShader(rect),
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-            itemCount: 6,
-            itemBuilder: (_, __) => Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(radius: 30, backgroundColor: baseColor),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        bar(width: 140, height: 14),
-                        const SizedBox(height: 6),
-                        bar(width: 80, height: 12),
-                        const SizedBox(height: 6),
-                        bar(width: 100, height: 10),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+  Widget _buildSkeleton() {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      itemCount: 6,
+      itemBuilder: (context, _) => AppShimmer.cardListTile(context),
     );
   }
 

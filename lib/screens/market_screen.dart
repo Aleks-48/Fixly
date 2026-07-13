@@ -190,7 +190,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 Text(
                   lang == 'ru' ? 'Найти мастера' : 'Шебер табу',
                   style: TextStyle(
-                      fontSize: 11, color: color),
+                      fontSize: 14, color: color),
                 ),
               ],
             ),
@@ -237,7 +237,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           ? 'Мастеров: ${_masters.length}'
                           : 'Шебер: ${_masters.length}',
                       style: const TextStyle(
-                          fontSize: 12, color: Colors.grey),
+                          fontSize: 14, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -265,7 +265,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
-                      fontSize: 12),
+                      fontSize: 14),
                 ),
               ),
             ],
@@ -369,16 +369,16 @@ class _MarketScreenState extends State<MarketScreen> {
                       const SizedBox(width: 3),
                       Text(m.rating.toStringAsFixed(1),
                           style: const TextStyle(
-                              fontSize: 12, fontWeight: FontWeight.bold)),
+                              fontSize: 14, fontWeight: FontWeight.bold)),
                       Text(' (${m.reviewsCount})',
                           style: const TextStyle(
-                              fontSize: 11, color: Colors.grey)),
+                              fontSize: 14, color: Colors.grey)),
                       if (m.priceFrom != null) ...[
                         const SizedBox(width: 10),
                         Text(
                           '${lang == 'ru' ? 'от' : 'бастап'} ${m.priceFrom!.toInt()} ₸',
                           style: const TextStyle(
-                              fontSize: 11,
+                              fontSize: 14,
                               color: Colors.blueAccent,
                               fontWeight: FontWeight.w600),
                         ),
@@ -415,7 +415,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   ? 'Создайте заявку — мастера сами откликнутся'
                   : 'Өтінім жасаңыз — шеберлер хабарласады',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
+              style: const TextStyle(color: Colors.grey, fontSize: 14),
             ),
           ],
         ),

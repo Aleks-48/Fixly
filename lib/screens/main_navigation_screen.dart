@@ -206,7 +206,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: isSelected ? Colors.blueAccent : Colors.grey,
-              fontSize: 10,
+              fontSize: 13,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),

@@ -76,22 +76,14 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
 
 Widget _buildChatTab(bool isDark) {
     return StreamBuilder<List<Map<String, dynamic>>>(
-      // ВАЖНО: раньше здесь был .eq('is_deleted', false). Колонка
-      // is_deleted никогда не проставляется при создании заявки
-      // (create_order_page.dart её не пишет), значит у всех задач это
-      // поле либо отсутствует, либо всегда NULL. В Postgres
-      // `NULL = false` не равно true, поэтому фильтр не пропускал ни
-      // одной строки — список чатов был всегда пустым для жителей и
-      // мастеров. Убрали фильтр из запроса; при необходимости скрывать
-      // удалённые задачи используем tasks.status != 'cancelled' ниже.
-      stream: supabase.from('tasks').stream(primaryKey: ['id']).order('created_at', ascending: false),
+      stream: supabase.from('tasks').stream(primaryKey: ['id']).eq('is_deleted', false).order('created_at', ascending: false),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
         final myId = supabase.auth.currentUser?.id;
         final tasks = snapshot.data!.where((t) {
-          // Условие 1: Я создатель заявки
-          final bool isOwner = t['user_id'] == myId;
+          // Условие 1: Я создатель или заказчик
+          final bool isOwner = t['user_id'] == myId || t['client_id'] == myId;
           
           // Условие 2: Я был назначен мастером (даже если заказ завершен)
           final bool wasMaster = t['master_id'] == myId;
@@ -135,7 +127,7 @@ Widget _buildChatTab(bool isDark) {
 
   Widget _buildPremiumTile(BuildContext context, Map<String, dynamic> task, bool isDark) {
     final style = _getStatusStyle(task['status'] ?? 'new');
-    return Dismissible(key: Key(task['id'].toString()), direction: DismissDirection.endToStart, onDismissed: (_) => setState(() => _localHiddenIds.add(task['id'].toString())), background: _buildDismissBackground(), child: Container(margin: const EdgeInsets.only(bottom: 12), child: InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(taskId: task['id'].toString(), taskTitle: task['title'] ?? 'Чат', receiverId: task['master_id']?.toString() ?? '', receiverName: 'Мастер'))), borderRadius: BorderRadius.circular(28), child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: isDark ? const Color(0xFF1A1A1C) : Colors.white, borderRadius: BorderRadius.circular(28)), child: Row(children: [Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(gradient: style['gradient'], borderRadius: BorderRadius.circular(20)), child: Icon(style['icon'], color: Colors.white)), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(task['title'] ?? 'Заказ', style: const TextStyle(fontWeight: FontWeight.bold)), Text(style['label'], style: TextStyle(color: style['color'], fontSize: 10))]))])))));
+    return Dismissible(key: Key(task['id'].toString()), direction: DismissDirection.endToStart, onDismissed: (_) => setState(() => _localHiddenIds.add(task['id'].toString())), background: _buildDismissBackground(), child: Container(margin: const EdgeInsets.only(bottom: 12), child: InkWell(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(taskId: task['id'].toString(), taskTitle: task['title'] ?? 'Чат', receiverId: task['master_id']?.toString() ?? '', receiverName: 'Мастер'))), borderRadius: BorderRadius.circular(28), child: Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: isDark ? const Color(0xFF1A1A1C) : Colors.white, borderRadius: BorderRadius.circular(28)), child: Row(children: [Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(gradient: style['gradient'], borderRadius: BorderRadius.circular(20)), child: Icon(style['icon'], color: Colors.white)), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(task['title'] ?? 'Заказ', style: const TextStyle(fontWeight: FontWeight.bold)), Text(style['label'], style: TextStyle(color: style['color'], fontSize: 13))]))])))));
   }
 
   Map<String, dynamic> _getStatusStyle(String status) {

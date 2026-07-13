@@ -24,6 +24,7 @@ dependencies:
   flutter_launcher_icons: ^0.13.1
   universal_html: ^2.2.4
 
+
   
   # Карты и геолокация
   flutter_map: ^7.0.2
@@ -40,6 +41,7 @@ dependencies:
   supabase_flutter: ^2.8.0
   google_generative_ai: ^0.4.7
   http: ^1.6.0
+  flutter_dotenv: ^5.2.1
   
   # Сервисы
   firebase_core: ^4.4.0
@@ -67,6 +69,7 @@ flutter:
     - assets/sounds/ribhavagrawal-notification-sound-type-20-no-copyright-410276.mp3
     - assets/sounds/tutorial/
     - assets/logo.png
+    - .env
 
 flutter_launcher_icons:
   android: true

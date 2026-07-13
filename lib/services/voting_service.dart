@@ -142,4 +142,20 @@ class VotingService {
         .order('voted_at', ascending: false);
     return List<Map<String, dynamic>>.from(response as List);
   }
+
+  static Future<Map<String, dynamic>?> getUserVote({
+    required String proposalId,
+    required String userId,
+  }) async {
+    try {
+      return await _sb
+          .from('votes')
+          .select()
+          .eq('proposal_id', proposalId)
+          .eq('user_id', userId)
+          .maybeSingle();
+    } catch (_) {
+      return null;
+    }
+  }
 }

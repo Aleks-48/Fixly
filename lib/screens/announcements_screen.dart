@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/services/building_context_service.dart';
+import 'package:fixly_app/widgets/app_shimmer.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
   const AnnouncementsScreen({super.key});
@@ -352,7 +353,18 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
             // Список
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
+                  // ВАЖНО: раньше здесь был просто CircularProgressIndicator
+                  // по центру пустого экрана — пользователь не понимал, что
+                  // именно загружается и какой будет форма контента.
+                  // Скелетон-заглушка сразу показывает форму карточек
+                  // объявлений — воспринимается быстрее и понятнее,
+                  // особенно важно для пользователей, которым не всегда
+                  // очевидно, что "крутилка" означает "подождите".
+                  ? ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                      itemCount: 4,
+                      itemBuilder: (_, __) => AppShimmer.announcementCard(context),
+                    )
                   : _filtered.isEmpty
                       ? _buildEmpty(lang)
                       : RefreshIndicator(

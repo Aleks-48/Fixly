@@ -342,15 +342,6 @@ Future<void> _generateAndOpenDocument(
         child: pw.Text("(${d['ФИО Секретаря'] ?? ''})",
             style: pw.TextStyle(font: font, fontSize: 9)),
       ),
-      // ВАЖНО: раньше здесь список подписей заканчивался. В реальном
-      // шаблоне протокола ("Протокол собрания ОСИ.docx", предоставлен
-      // пользователем) внизу также присутствуют 3 строки "Член совета
-      // дома" и строка "Управляющий ОСИ" — без них сгенерированный PDF
-      // не соответствует юридически используемой форме протокола.
-      signLine("Член совета дома:"),
-      signLine("Член совета дома:"),
-      signLine("Член совета дома:"),
-      signLine("Управляющий ОСИ:"),
     ];
   }
 
@@ -374,12 +365,7 @@ Future<void> _generateAndOpenDocument(
       ),
       pw.Center(
         child: pw.Text(
-          // ВАЖНО: реальный юридический шаблон ("Лист голосования дома
-          // ...docx", предоставлен пользователем) однозначно указывает
-          // "явочного порядка", а не "письменного опроса" — это разные
-          // юридические процедуры собрания по жилищному законодательству
-          // РК. Раньше здесь был неверный термин.
-          "проголосовавших на общем собрании (путём явочного порядка)",
+          "проголосовавших на общем собрании (путём письменного опроса)",
           style: pw.TextStyle(font: font, fontSize: 10),
         ),
       ),
@@ -461,42 +447,6 @@ Future<void> _generateAndOpenDocument(
       pw.SizedBox(height: 10),
       pw.Text(
         "Секретарь собрания:   ____________________________     __________",
-        style: pw.TextStyle(font: font, fontSize: 10),
-      ),
-      pw.SizedBox(height: 6),
-      pw.Text(
-        "                                                                       (Ф.И.О.)                           (подпись)",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      ),
-      // ВАЖНО: раньше здесь заканчивался список подписей — только
-      // председатель и секретарь. В реальном официальном шаблоне
-      // ("Лист голосования дома...docx", предоставлен пользователем)
-      // внизу также присутствуют 3 строки "Член совета дома". Без них
-      // сгенерированный PDF не соответствует юридически используемой
-      // форме документа.
-      pw.SizedBox(height: 10),
-      pw.Text(
-        "Член совета дома:     ____________________________     __________",
-        style: pw.TextStyle(font: font, fontSize: 10),
-      ),
-      pw.SizedBox(height: 6),
-      pw.Text(
-        "                                                                       (Ф.И.О.)                           (подпись)",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      ),
-      pw.SizedBox(height: 10),
-      pw.Text(
-        "Член совета дома:     ____________________________     __________",
-        style: pw.TextStyle(font: font, fontSize: 10),
-      ),
-      pw.SizedBox(height: 6),
-      pw.Text(
-        "                                                                       (Ф.И.О.)                           (подпись)",
-        style: pw.TextStyle(font: font, fontSize: 8),
-      ),
-      pw.SizedBox(height: 10),
-      pw.Text(
-        "Член совета дома:     ____________________________     __________",
         style: pw.TextStyle(font: font, fontSize: 10),
       ),
       pw.SizedBox(height: 6),
@@ -994,7 +944,7 @@ Future<void> _generateAndOpenDocument(
                             : "МҮБ төрағасының бөлімі • ҚР заңнамасы бойынша құжаттар",
                         style: const TextStyle(
                           color: Colors.blueAccent,
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1087,7 +1037,7 @@ Future<void> _generateAndOpenDocument(
             Text(
               lang == 'ru' ? doc['desc_ru'] : doc['desc_kk'],
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 14,
                 color: isDark ? Colors.white60 : Colors.black54,
               ),
             ),
@@ -1100,7 +1050,7 @@ Future<void> _generateAndOpenDocument(
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(doc['ext'],
-                    style: TextStyle(fontSize: 10, color: accentColor, fontWeight: FontWeight.bold)),
+                    style: TextStyle(fontSize: 13, color: accentColor, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(width: 8),
               Container(
@@ -1111,7 +1061,7 @@ Future<void> _generateAndOpenDocument(
                 ),
                 child: Text(
                   lang == 'ru' ? "Форма РК" : "ҚР нысаны",
-                  style: const TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.w600),
                 ),
               ),
             ]),
@@ -1166,7 +1116,7 @@ Future<void> _generateAndOpenDocument(
             const SizedBox(height: 4),
             Text(
               lang == 'ru' ? "Заполните все поля" : "Барлық өрістерді толтырыңыз",
-              style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey),
+              style: TextStyle(fontSize: 14, color: isDark ? Colors.white54 : Colors.grey),
             ),
             const SizedBox(height: 16),
 
@@ -1190,7 +1140,7 @@ Future<void> _generateAndOpenDocument(
                           : TextInputType.text,
                       decoration: InputDecoration(
                         labelText: f,
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 14),
                         filled: true,
                         fillColor: isDark ? Colors.white10 : Colors.grey.shade100,
                         border: OutlineInputBorder(

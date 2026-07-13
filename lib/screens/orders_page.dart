@@ -4,7 +4,6 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/order_details_page.dart';
-import 'package:fixly_app/services/building_context_service.dart';
 
 // ============================================================
 //  OrdersPage — список заявок
@@ -78,15 +77,8 @@ class _OrdersPageState extends State<OrdersPage>
         } else {
           query = query.eq('master_id', userId);
         }
-      } else if (role == 'chairman') {
-        // ВАЖНО: раньше здесь стоял комментарий "пока без фильтра по
-        // building" — председатель реально видел заявки ВСЕХ домов в
-        // системе, а не только своего. Утечка данных между ЖК.
-        final buildingId = await BuildingContextService.currentBuildingId();
-        if (buildingId != null && buildingId.isNotEmpty) {
-          query = query.eq('building_id', buildingId);
-        }
       }
+      // chairman видит все заявки своего дома — пока без фильтра по building
 
       // Фильтр по статусу
       if (_statusFilter != 'all') {
@@ -284,7 +276,7 @@ class _OrdersPageState extends State<OrdersPage>
                       apt.isNotEmpty
                           ? '$address, кв. $apt'
                           : address,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -299,8 +291,16 @@ class _OrdersPageState extends State<OrdersPage>
                 children: [
                   const Icon(LucideIcons.user, size: 12, color: Colors.grey),
                   const SizedBox(width: 4),
-                  Text(clientName,
-                      style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  // ВАЖНО: раньше Text здесь не был ограничен по ширине —
+                  // после увеличения шрифта (13-14px) длинное имя клиента
+                  // выходило за пределы карточки и Flutter показывал
+                  // красную полосу переполнения ("RenderFlex overflowed").
+                  Expanded(
+                    child: Text(clientName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                  ),
                 ],
               ),
             ],
@@ -317,7 +317,7 @@ class _OrdersPageState extends State<OrdersPage>
                     const SizedBox(width: 6),
                     Text(
                       DateFormat('dd.MM.yy').format(date),
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -348,7 +348,7 @@ class _OrdersPageState extends State<OrdersPage>
         child: Text(
           label,
           style: TextStyle(
-              color: color, fontSize: 10, fontWeight: FontWeight.bold),
+              color: color, fontSize: 13, fontWeight: FontWeight.bold),
         ),
       );
 

@@ -205,4 +205,174 @@ class PdfReportService {
       name: 'Акт_голосования_${DateTime.now().millisecondsSinceEpoch}.pdf',
     );
   }
+
+  /// МЕТОД ДЛЯ ГЕНЕРАЦИИ ФИНАНСОВОГО ОТЧЕТА (PDF)
+  static Future<Uint8List> createFinancialReportPdf({
+    required double eosiBalance,
+    required double capitalBalance,
+    required double totalSpent,
+    required List<Map<String, dynamic>> expenses,
+    String address = "Не указан",
+  }) async {
+    final pdf = pw.Document();
+
+    final font = await PdfGoogleFonts.robotoRegular();
+    final boldFont = await PdfGoogleFonts.robotoBold();
+
+    // Форматирование даты
+    final now = DateTime.now();
+    final dateStr = '${now.day.toString().padLeft(2, '0')}.${now.month.toString().padLeft(2, '0')}.${now.year}';
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(40),
+        theme: pw.ThemeData.withFont(base: font, bold: boldFont),
+        build: (context) => [
+          pw.Center(
+            child: pw.Text(
+              "ФИНАНСОВЫЙ ОТЧЕТ ОБЪЕДИНЕНИЯ СОБСТВЕННИКОВ ИМУЩЕСТВА (ОСИ)",
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+            ),
+          ),
+          pw.SizedBox(height: 20),
+          
+          pw.Text("Адрес: $address", style: const pw.TextStyle(fontSize: 10)),
+          pw.Text("Дата формирования отчета: $dateStr", style: const pw.TextStyle(fontSize: 10)),
+          pw.SizedBox(height: 15),
+
+          // Блок сводных балансов
+          pw.Container(
+            padding: const pw.EdgeInsets.all(10),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.black, width: 0.5),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text("СВОДНАЯ ИНФОРМАЦИЯ ПО СЧЕТАМ", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 10),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("Счет текущего содержания (ЕОСИ):"),
+                    pw.Text("${eosiBalance.toStringAsFixed(2)} ₸", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  ]
+                ),
+                pw.SizedBox(height: 5),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("Счет капитального ремонта:"),
+                    pw.Text("${capitalBalance.toStringAsFixed(2)} ₸", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  ]
+                ),
+                pw.SizedBox(height: 5),
+                pw.Divider(thickness: 0.5),
+                pw.SizedBox(height: 5),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text("ИТОГО ОСВОЕНО СРЕДСТВ:"),
+                    pw.Text("${totalSpent.toStringAsFixed(2)} ₸", style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  ]
+                ),
+              ],
+            )
+          ),
+          
+          pw.SizedBox(height: 20),
+          pw.Text("ДЕТАЛИЗАЦИЯ РАСХОДОВ (Выполненные работы)", style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 10),
+
+          // Таблица расходов
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.black, width: 0.5),
+            columnWidths: {
+              0: const pw.FixedColumnWidth(30),   // №
+              1: const pw.FlexColumnWidth(3),     // Наименование
+              2: const pw.FlexColumnWidth(2),     // Дата
+              3: const pw.FlexColumnWidth(2),     // Сумма
+            },
+            children: [
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  _buildCell("№", isHeader: true),
+                  _buildCell("Наименование работ / Заявка", isHeader: true, alignLeft: true),
+                  _buildCell("Дата завершения", isHeader: true),
+                  _buildCell("Сумма (₸)", isHeader: true),
+                ],
+              ),
+              if (expenses.isEmpty)
+                pw.TableRow(
+                  children: [
+                    _buildCell("-"),
+                    _buildCell("Нет расходов за период", alignLeft: true),
+                    _buildCell("-"),
+                    _buildCell("-"),
+                  ]
+                )
+              else
+                ...expenses.asMap().entries.map((entry) {
+                  final index = entry.key + 1;
+                  final exp = entry.value;
+                  final title = exp['title'] ?? 'Ремонтные работы';
+                  final date = exp['completed_at'] != null 
+                    ? DateTime.tryParse(exp['completed_at'].toString()) 
+                    : null;
+                  final dateFormatted = date != null 
+                    ? '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}'
+                    : 'Н/Д';
+                  final price = double.tryParse(exp['final_price']?.toString() ?? '0') ?? 0;
+
+                  return pw.TableRow(
+                    children: [
+                      _buildCell(index.toString()),
+                      _buildCell(title, alignLeft: true),
+                      _buildCell(dateFormatted),
+                      _buildCell(price.toStringAsFixed(2)),
+                    ]
+                  );
+                }),
+            ],
+          ),
+
+          pw.SizedBox(height: 40),
+          _buildSignatureLine("Председатель ОСИ:"),
+          
+          pw.SizedBox(height: 20),
+          pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text("Сформировано в системе Fixly", style: pw.TextStyle(fontSize: 8, color: PdfColors.grey500)),
+          ),
+        ],
+      ),
+    );
+
+    return await pdf.save();
+  }
+
+  /// Обёртка для вызова и скачивания фин отчета
+  static Future<void> exportAndOpenFinancialPdf({
+    required double eosiBalance,
+    required double capitalBalance,
+    required double totalSpent,
+    required List<Map<String, dynamic>> expenses,
+    String address = "Не указан",
+  }) async {
+    final pdfBytes = await createFinancialReportPdf(
+      eosiBalance: eosiBalance,
+      capitalBalance: capitalBalance,
+      totalSpent: totalSpent,
+      expenses: expenses,
+      address: address,
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdfBytes,
+      name: 'Финансовый_отчет_ОСИ_${DateTime.now().millisecondsSinceEpoch}.pdf',
+    );
+  }
 }

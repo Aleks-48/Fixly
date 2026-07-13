@@ -260,7 +260,7 @@ class _MyWorkScreenState extends State<MyWorkScreen>
             Text(
               label,
               style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 14,
                   color: isDark ? Colors.white54 : Colors.black45),
             ),
           ],
@@ -353,7 +353,7 @@ class _MyWorkScreenState extends State<MyWorkScreen>
                     child: Text(
                       order.address!,
                       style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 14,
                           color: isDark ? Colors.white38 : Colors.black38),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

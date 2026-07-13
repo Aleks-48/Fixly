@@ -268,7 +268,7 @@ class _IncomeScreenState extends State<IncomeScreen>
               child: Text(
                 '${lang == 'ru' ? 'Лучший' : 'Үздік'}: $_bestMonthLabel — ${_fmt(_bestMonthIncome)} ₸',
                 style: const TextStyle(
-                    color: Colors.white, fontSize: 11),
+                    color: Colors.white, fontSize: 14),
               ),
             ),
           ],
@@ -323,7 +323,7 @@ class _IncomeScreenState extends State<IncomeScreen>
                 children: [
                   Text(label,
                       style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 14,
                           color: isDark ? Colors.white54 : Colors.black45)),
                   Text(value,
                       style: TextStyle(
@@ -386,7 +386,7 @@ class _IncomeScreenState extends State<IncomeScreen>
                             child: Text(
                               _shortNum(d.amount),
                               style: TextStyle(
-                                  fontSize: 9,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                   color: isMax
                                       ? Colors.blueAccent
@@ -420,7 +420,7 @@ class _IncomeScreenState extends State<IncomeScreen>
                       child: Text(d.label,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                              fontSize: 10, color: Colors.grey)),
+                              fontSize: 13, color: Colors.grey)),
                     ))
                 .toList(),
           ),
@@ -472,7 +472,7 @@ class _IncomeScreenState extends State<IncomeScreen>
                     overflow: TextOverflow.ellipsis),
                 Text(
                   DateFormat('dd.MM.yy').format(date),
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
               ],
             ),

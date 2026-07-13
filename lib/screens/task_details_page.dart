@@ -149,7 +149,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _buildStatusBadge(currentStatus, lang),
-                    Text(formattedDate, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                    Text(formattedDate, style: TextStyle(color: Colors.grey[500], fontSize: 14)),
                   ],
                 ),
                 const SizedBox(height: 20),
@@ -297,7 +297,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+      child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.grey)),
     );
   }
 
@@ -307,7 +307,7 @@ class _TaskDetailsPageState extends State<TaskDetailsPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: color)),
-      child: Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+      child: Text(text, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.bold)),
     );
   }
 

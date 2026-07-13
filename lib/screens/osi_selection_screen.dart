@@ -4,7 +4,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
-import 'package:fixly_app/services/building_context_service.dart';
 
 class OsiSelectionScreen extends StatefulWidget {
   const OsiSelectionScreen({super.key});
@@ -92,66 +91,49 @@ class _OsiSelectionScreenState extends State<OsiSelectionScreen> {
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
-        final supabase = Supabase.instance.client;
+        final sb = Supabase.instance.client;
 
-        // Обновляем профиль пользователя, добавляя building_id
-        await supabase
-            .from('profiles')
-            .update({'building_id': buildingId})
-            .eq('id', user.id);
-
-        // ВАЖНО: раньше этот экран писал building_id ТОЛЬКО в profiles.
-        // Но BuildingContextService.loadCurrent() в первую очередь ищет
-        // запись в building_members с verification_status IN
-        // ('verified','approved') и только при её отсутствии падает на
-        // profiles.building_id как fallback. Для роли chairman/manager
-        // _guardUnverifiedManagerRole() принудительно понижает роль до
-        // resident, если верификации в building_members нет — из-за
-        // этого расхождения источников председатель мог "выбрать дом"
-        // на этом экране, но приложение всё равно показывало "Дом не
-        // выбран" и блокировало функции управления домом (создание
-        // голосований, аналитику и т.д.).
+        // ВАЖНО: раньше здесь обновлялся ТОЛЬКО profiles.building_id.
+        // Но BuildingContextService (и вся проверка прав — canManageHouse,
+        // isVerifiedMember, доступ к голосованиям) в первую очередь смотрит
+        // таблицу building_members, а profiles.building_id — лишь fallback.
+        // Без строки в building_members житель не мог голосовать
+        // (apartment_id/isVerifiedMember оставались пустыми), а
+        // председатель не получал canManageHouse — сколько бы раз он ни
+        // выбирал дом на этом экране, для системы он оставался "без дома".
         //
-        // В проекте пока нет отдельного экрана/флоу ручного одобрения
-        // членства в доме администратором — поэтому синхронизируем
-        // building_members прямо здесь и сразу верифицируем запись,
-        // чтобы не блокировать основной функционал. Если в будущем
-        // появится ручная модерация председателей/жителей — здесь
-        // нужно будет заменить 'verified' на 'pending'.
-        final profileRow = await supabase
+        // Отдельного flow модерации жителей в проекте пока нет (только
+        // у мастеров есть verification_screen), поэтому верифицируем сразу.
+        final profile = await sb
             .from('profiles')
             .select('role, user_type')
             .eq('id', user.id)
             .maybeSingle();
-        final memberRole = BuildingContextService.normalizeRoleKey(
-          profileRow?['role']?.toString(),
-          profileRow?['user_type']?.toString(),
-        );
+        final rawRole = (profile?['role'] ?? profile?['user_type'] ?? 'resident')
+            .toString()
+            .toLowerCase();
+        final memberRole = (rawRole == 'osi' || rawRole == 'chairman')
+            ? 'chairman'
+            : 'resident';
 
-        final existingMembership = await supabase
-            .from('building_members')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('building_id', buildingId)
-            .maybeSingle();
+        // На пользователя — одна активная привязка к дому. Если раньше
+        // уже была запись (например, к другому дому), заменяем её.
+        await sb.from('building_members').delete().eq('user_id', user.id);
+        await sb.from('building_members').insert({
+          'user_id': user.id,
+          'building_id': buildingId,
+          'member_role': memberRole,
+          'verification_status': 'verified',
+          'created_at': DateTime.now().toIso8601String(),
+        });
 
-        if (existingMembership != null) {
-          await supabase
-              .from('building_members')
-              .update({
-                'member_role': memberRole,
-                'verification_status': 'verified',
-              })
-              .eq('id', existingMembership['id']);
-        } else {
-          await supabase.from('building_members').insert({
-            'user_id': user.id,
-            'building_id': buildingId,
-            'member_role': memberRole,
-            'verification_status': 'verified',
-          });
-        }
-
+        // Дублируем building_id в profiles — для экранов, которые ещё
+        // читают его оттуда напрямую (create_order_page.dart и т.п.).
+        await sb
+            .from('profiles')
+            .update({'building_id': buildingId})
+            .eq('id', user.id);
+            
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Вы успешно привязаны к дому!"), backgroundColor: Colors.green)

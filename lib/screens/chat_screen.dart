@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:fixly_app/screens/call_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class ChatScreen extends StatefulWidget {
   final String taskId;
@@ -243,7 +244,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 Text(
                   widget.receiverName,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                 ),
               ],
             ),
@@ -314,7 +315,7 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-          child: Text(msg['content'], textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.blueAccent, fontWeight: FontWeight.w500)),
+          child: Text(msg['content'], textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.w500)),
         ),
       );
     }
@@ -365,7 +366,7 @@ class _ChatScreenState extends State<ChatScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Spacer(),
-                Text(time, style: TextStyle(color: isMe ? Colors.white70 : Colors.grey, fontSize: 10)),
+                Text(time, style: TextStyle(color: isMe ? Colors.white70 : Colors.grey, fontSize: 13)),
                 if (isMe) ...[
                   const SizedBox(width: 4),
                   Icon(msg['is_read'] == true ? Icons.done_all : Icons.done, size: 14, color: Colors.white70),
@@ -573,70 +574,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _stopLocationTracking() => _locationTimer?.cancel();
 
-  // ВАЖНО: раньше здесь просто открывался CallScreen напрямую, без
-  // какой-либо записи в БД. incoming_call_screen.dart слушает таблицу
-  // `calls`, но её никто не создавал — собеседник никогда не видел
-  // экран входящего звонка. Теперь перед открытием своего CallScreen
-  // создаём запись, которую подхватит глобальный слушатель в
-  // main_wrapper.dart на стороне принимающего.
-  Future<void> _openCall(bool video) async {
-    if (effectiveReceiverId.isEmpty) await _repairReceiverId();
-    if (effectiveReceiverId.isEmpty) {
-      _showSnackBar("Собеседник не определен", Colors.redAccent);
-      return;
-    }
-
-    String callerName = supabase.auth.currentUser?.email ?? 'Пользователь';
-    String? callerAvatar;
-    try {
-      final myProfile = await supabase
-          .from('profiles')
-          .select('full_name, avatar_url')
-          .eq('id', myId)
-          .maybeSingle();
-      if (myProfile != null) {
-        callerName = myProfile['full_name']?.toString() ?? callerName;
-        callerAvatar = myProfile['avatar_url']?.toString();
-      }
-    } catch (_) {}
-
-    String? callId;
-    try {
-      final row = await supabase.from('calls').insert({
-        'task_id': widget.taskId,
-        'task_title': widget.taskTitle,
-        'caller_id': myId,
-        'receiver_id': effectiveReceiverId,
-        'caller_name': callerName,
-        'caller_avatar': callerAvatar,
-        'has_video': video,
-        'status': 'ringing',
-      }).select('id').single();
-      callId = row['id']?.toString();
-    } catch (e) {
-      debugPrint('Не удалось создать запись звонка: $e');
-    }
-
-    if (!mounted) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => CallScreen(
-      taskId: widget.taskId,
-      hasVideo: video,
-      userName: widget.receiverName,
-      avatarUrl: '',
-      remoteUserId: effectiveReceiverId,
-      remoteUserName: widget.receiverName,
-      taskTitle: widget.taskTitle,
-      isIncoming: false,
-      // ВАЖНО: callId выше объявлен как String? — если создание записи
-      // в таблице calls упало (сеть/RLS/и т.п.), callId остаётся null.
-      // CallScreen ожидает non-nullable String, отсюда и ошибка
-      // "String? can't be assigned to String". Даём безопасный fallback:
-      // пустая строка означает "звонок без серверной записи" — тот же
-      // паттерн, что уже используется для remoteUserId/avatarUrl в этом
-      // файле при отсутствии данных.
-      callId: callId ?? '',
-    )));
-  }
+  void _openCall(bool video) => Navigator.push(context, MaterialPageRoute(builder: (_) => CallScreen(taskId: widget.taskId, hasVideo: video, userName: widget.receiverName, avatarUrl: '', remoteUserId: '', remoteUserName: '', taskTitle: '', isIncoming: false,)));
 
   void _showSnackBar(String text, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text), backgroundColor: color, behavior: SnackBarBehavior.floating));
@@ -671,7 +609,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _step(String label, bool active) => Column(children: [
     Icon(active ? LucideIcons.checkCircle2 : LucideIcons.circle, color: active ? Colors.blueAccent : Colors.grey[300], size: 18),
     const SizedBox(height: 4),
-    Text(label, style: TextStyle(fontSize: 10, fontWeight: active ? FontWeight.bold : FontWeight.normal, color: active ? (isDark?Colors.white:Colors.black) : Colors.grey)),
+    Text(label, style: TextStyle(fontSize: 13, fontWeight: active ? FontWeight.bold : FontWeight.normal, color: active ? (isDark?Colors.white:Colors.black) : Colors.grey)),
   ]);
 
   Widget _line(bool active) => Expanded(child: Container(height: 2, color: active ? Colors.blueAccent : Colors.grey[200], margin: const EdgeInsets.symmetric(horizontal: 8)));

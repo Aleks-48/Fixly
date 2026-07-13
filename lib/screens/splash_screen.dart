@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:fixly_app/main.dart';
+import 'package:fixly_app/screens/login_page.dart';
+import 'package:fixly_app/screens/main_wrapper.dart';
 
 // ============================================================
 //  SplashScreen — первый экран при запуске
@@ -108,20 +109,21 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _checkSessionAndNavigate() async {
+    final session = Supabase.instance.client.auth.currentSession;
+
     if (!mounted) return;
 
-    // ВАЖНО: раньше здесь решалось напрямую — сессия есть → MainWrapper,
-    // нет — LoginPage. Это обходило AuthGate, который единственный
-    // устанавливает глобальный userRole (ValueNotifier), используемый
-    // order_details_page.dart и master_Detail_Page.dart для показа
-    // ролевых кнопок ("Взять в работу", "Заказать услугу" и т.д.).
-    // Реальные мастера/председатели навсегда оставались бы с ролью
-    // 'resident' по умолчанию. Теперь сплэш просто передаёт эстафету
-    // AuthGate, который уже сам решает — LoginPage или MainWrapper.
+    Widget destination;
+    if (session != null) {
+      destination = const MainWrapper();
+    } else {
+      destination = const LoginPage();
+    }
+
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, anim, __) => const AuthGate(),
+        pageBuilder: (_, anim, __) => destination,
         transitionsBuilder: (_, anim, __, child) => FadeTransition(
           opacity: anim,
           child: child,
@@ -305,7 +307,7 @@ class _SplashScreenState extends State<SplashScreen>
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Color(0xFF3A4A6B),
-                      fontSize: 12,
+                      fontSize: 14,
                     ),
                   ),
                 ),

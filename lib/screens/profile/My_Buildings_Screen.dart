@@ -136,7 +136,7 @@ class MyBuildingsScreen extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: Colors.blueAccent),
             const SizedBox(width: 6),
-            Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.blueAccent)),
+            Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.blueAccent)),
           ],
         ),
       ),

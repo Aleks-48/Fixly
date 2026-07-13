@@ -203,4 +203,18 @@ class ProfileService {
       await _sb.from('profiles').update({'fcm_token': token}).eq('id', uid);
     } catch (_) {}
   }
+
+  // ── ПОЛУЧИТЬ ЖИТЕЛЕЙ ДОМА ──────────────────────────────────
+  static Future<List<Map<String, dynamic>>> getResidentsByBuilding(String buildingId) async {
+    if (buildingId.isEmpty) return [];
+    try {
+      final data = await _sb
+          .from('profiles')
+          .select()
+          .eq('building_id', buildingId);
+      return List<Map<String, dynamic>>.from(data as List);
+    } catch (_) {
+      return [];
+    }
+  }
 }

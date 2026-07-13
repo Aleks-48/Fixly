@@ -4,12 +4,10 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/screens/announcements_screen.dart';
 import 'package:fixly_app/screens/library_screen.dart';
 import 'package:fixly_app/screens/masters_list_screen.dart';
-// Раньше путь был screens/profile/chairman_Analytics_Screen.dart — папки
-// profile/ не существует, файл не компилировался.
 import 'package:fixly_app/screens/profile/chairman_Analytics_Screen.dart';
 import 'package:fixly_app/screens/profile_page.dart';
 import 'package:fixly_app/screens/voting_list_screen.dart';
-import 'package:fixly_app/screens/verification_screen.dart';
+import 'package:fixly_app/screens/chairman_building_selection_screen.dart';
 
 class ChairmanMoreScreen extends StatelessWidget {
   const ChairmanMoreScreen({super.key});
@@ -36,6 +34,20 @@ class ChairmanMoreScreen extends StatelessWidget {
 body: ListView(
   padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
   children: [
+    // Раньше выбрать/сменить дом можно было только один раз — на экране
+    // регистрации (osi_selection_screen). У уже зарегистрированного
+    // председателя не было пути привязать дом позже или сменить его —
+    // отсюда "Дом не выбран" без возможности что-то с этим сделать.
+    _tile(
+      context,
+      card,
+      isDark,
+      LucideIcons.building2,
+      Colors.blueAccent,
+      'Мой дом',
+      'Выбор, привязка и смена дома',
+      const ChairmanBuildingSelectionScreen(),
+    ),
     _tile(
       context,
       card,
@@ -76,20 +88,6 @@ body: ListView(
       'Мастера',
       'Исполнители для заявок дома',
       const MastersListScreen(),
-    ),
-    // ВАЖНО: раньше verification_screen.dart (список заявок мастеров на
-    // верификацию + кнопки одобрить/отклонить для председателя)
-    // существовал, но никуда не был подключён — председатель не мог
-    // физически попасть на проверку мастеров.
-    _tile(
-      context,
-      card,
-      isDark,
-      LucideIcons.shieldCheck,
-      Colors.indigo,
-      'Верификация мастеров',
-      'Проверка документов и одобрение заявок',
-      const VerificationScreen(),
     ),
     _tile(
       context,

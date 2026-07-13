@@ -48,11 +48,31 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   Timer? _timeoutTimer;       // Таймер для автосброса
   bool _isActing = false;     // Флаг блокировки кнопок (предотвращает двойные нажатия)
   Map<String, dynamic>? _callData; // Данные звонка из БД
-  RealtimeChannel? _statusChannel; // Собственный канал этого экрана
 
   // Контроллер анимации для эффекта пульсации
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
+
+  // ВАЖНО (доступность): раньше единственным сигналом об истечении
+  // 30-секундного окна на ответ был текстовый таймаут где-то в логах —
+  // пользователь никак не видел, сколько времени осталось. Добавляем
+  // визуальное затухающее кольцо-таймер (понятно без чтения текста —
+  // важно для пожилых пользователей, которым не всегда удобно быстро
+  // считывать цифры под давлением времени) плюс мягкое появление
+  // контента экрана вместо резкого попадания.
+  late final AnimationController _countdownCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 30),
+  )..forward();
+
+  late final AnimationController _entranceCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 450),
+  );
+  late final Animation<double> _entranceFade =
+      CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOut);
+  late final Animation<double> _entranceScale = Tween<double>(begin: 0.94, end: 1.0)
+      .animate(CurvedAnimation(parent: _entranceCtrl, curve: Curves.easeOutCubic));
 
   @override
   void initState() {
@@ -61,6 +81,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
     _setupAnimations();
     _startRingAndTimeout();
     _listenToCallStatus();
+    _entranceCtrl.forward();
   }
 
   /// Настройка анимации пульсации аватара
@@ -106,7 +127,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   /// Слушаем изменения в таблице calls.
   /// Если вызывающий сбросил звонок (статус 'ended' или 'declined'), закрываем экран.
   void _listenToCallStatus() {
-    _statusChannel = _supabase
+    _supabase
       .channel('public:calls:id=eq.${widget.callId}')
       .onPostgresChanges(
         event: PostgresChangeEvent.update,
@@ -151,13 +172,12 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
             builder: (_) => CallScreen(
               taskId: widget.taskId,
               hasVideo: _callData?['has_video'] == true, 
-              userName: widget.callerName, 
-              avatarUrl: widget.callerAvatar ?? '', 
-              remoteUserId: widget.callerId, 
-              remoteUserName: widget.callerName, 
-              taskTitle: widget.taskTitle, 
-              isIncoming: true,
-              callId: widget.callId,
+              userName: '', 
+              avatarUrl: '', 
+              remoteUserId: '', 
+              remoteUserName: '', 
+              taskTitle: '', 
+              isIncoming: true, // ИСПРАВЛЕНО ЗДЕСЬ: null заменен на true
             ),
           ),
         );
@@ -199,19 +219,15 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   void _cleanup() {
     _timeoutTimer?.cancel();
     SoundService.instance.stopRinging();
-    // ВАЖНО: раньше здесь был _supabase.removeAllChannels() — это
-    // глобально обрывает ВСЕ realtime-подписки в приложении, а не только
-    // канал этого экрана. Если в этот момент где-то ещё был активен
-    // живой стрим (например, чат в chat_screen.dart), он тоже тихо
-    // переставал получать обновления. Теперь отписываемся только от
-    // своего собственного канала.
-    _statusChannel?.unsubscribe();
+    _supabase.removeAllChannels(); // Отписка от realtime
   }
 
   @override
   void dispose() {
     _cleanup();
     _pulseController.dispose();
+    _countdownCtrl.dispose();
+    _entranceCtrl.dispose();
     super.dispose();
   }
 
@@ -229,64 +245,100 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
       // Темный, слегка прозрачный фон
       backgroundColor: isDark ? const Color(0xFF101012) : const Color(0xFF1A1D21),
       body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 60),
+        child: FadeTransition(
+          opacity: _entranceFade,
+          child: ScaleTransition(
+            scale: _entranceScale,
+            child: Column(
+              children: [
+                const SizedBox(height: 60),
 
-            // Заголовок типа звонка
-            Text(
-              isVideo 
-                ? (lang == 'ru' ? 'Входящий видеозвонок' : 'Кіріс бейнеқоңырау')
-                : (lang == 'ru' ? 'Входящий аудиозвонок' : 'Кіріс аудиоқоңырау'),
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.white.withOpacity(0.7),
-                letterSpacing: 1.2,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Название задачи
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                widget.taskTitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 22,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
+                // Заголовок типа звонка
+                Text(
+                  isVideo 
+                    ? (lang == 'ru' ? 'Входящий видеозвонок' : 'Кіріс бейнеқоңырау')
+                    : (lang == 'ru' ? 'Входящий аудиозвонок' : 'Кіріс аудиоқоңырау'),
+                  style: TextStyle(
+                    fontSize: 17,
+                    color: Colors.white.withOpacity(0.75),
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const Spacer(),
+                const SizedBox(height: 10),
 
-            // Аватар звонящего с эффектом пульсации
-            ScaleTransition(
-              scale: _pulseAnimation,
-              child: _buildAvatar(),
-            ),
-            const SizedBox(height: 30),
+                // Название задачи
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    widget.taskTitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Spacer(),
 
-            // Имя звонящего
-            Text(
-              widget.callerName,
-              style: const TextStyle(
-                fontSize: 28,
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(flex: 2),
+                // Аватар звонящего с эффектом пульсации
+                ScaleTransition(
+                  scale: _pulseAnimation,
+                  child: _buildAvatar(),
+                ),
+                const SizedBox(height: 30),
 
-            // Панель управления (Отклонить / Принять)
-            _buildActionButtons(lang),
-            const SizedBox(height: 50),
-          ],
+                // Имя звонящего
+                Text(
+                  widget.callerName,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 18),
+
+                // Визуальный таймер обратного отсчёта — тонкая затухающая
+                // полоса вместо только текста. Понятна с одного взгляда,
+                // не требует счёта цифр под давлением времени.
+                _buildCountdownBar(),
+
+                const Spacer(flex: 2),
+
+                // Панель управления (Отклонить / Принять)
+                _buildActionButtons(lang),
+                const SizedBox(height: 50),
+              ],
+            ),
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCountdownBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 60),
+      child: AnimatedBuilder(
+        animation: _countdownCtrl,
+        builder: (context, _) {
+          final remaining = (1 - _countdownCtrl.value).clamp(0.0, 1.0);
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: remaining,
+              minHeight: 6,
+              backgroundColor: Colors.white.withOpacity(0.12),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                remaining < 0.25 ? Colors.redAccent : Colors.blueAccent,
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -294,8 +346,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   /// Виджет аватара (с заглушкой, если фото нет)
   Widget _buildAvatar() {
     return Container(
-      width: 140,
-      height: 140,
+      width: 152,
+      height: 152,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white.withOpacity(0.1), width: 4),
@@ -308,7 +360,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(70),
+        borderRadius: BorderRadius.circular(76),
         child: widget.callerAvatar != null && widget.callerAvatar!.isNotEmpty
             ? Image.network(
                 widget.callerAvatar!,
@@ -327,7 +379,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
       child: Center(
         child: Text(
           widget.callerName.isNotEmpty ? widget.callerName[0].toUpperCase() : '?',
-          style: const TextStyle(fontSize: 50, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 56, color: Colors.blueAccent, fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -336,7 +388,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   /// Кнопки управления (Принять/Отклонить)
   Widget _buildActionButtons(String lang) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -377,20 +429,20 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
             duration: const Duration(milliseconds: 200),
             opacity: isDisabled ? 0.5 : 1.0,
             child: Container(
-              width: 80,
-              height: 80,
+              width: 96,
+              height: 96,
               decoration: BoxDecoration(
                 color: isDisabled ? Colors.grey.withOpacity(0.2) : color,
                 shape: BoxShape.circle,
                 boxShadow: isDisabled ? [] : [
                   BoxShadow(
-                    color: color.withOpacity(0.3),
-                    blurRadius: 20,
+                    color: color.withOpacity(0.35),
+                    blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
                 ],
               ),
-              child: Icon(icon, color: Colors.white, size: 32),
+              child: Icon(icon, color: Colors.white, size: 38),
             ),
           ),
         ),
@@ -398,9 +450,9 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
         Text(
           label,
           style: const TextStyle(
-            color: Colors.white70,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
           ),
         ),
       ],

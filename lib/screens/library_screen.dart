@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/services/building_context_service.dart';
+import 'package:fixly_app/widgets/app_shimmer.dart';
 
 // ============================================================
 //  LibraryScreen — библиотека нормативных документов ЖК
@@ -347,7 +348,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
               // Список
               Expanded(
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
+                    ? ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                        itemCount: 5,
+                        itemBuilder: (_, __) => AppShimmer.cardListTile(context),
+                      )
                     : _filtered.isEmpty
                         ? _buildEmpty(lang)
                         : RefreshIndicator(

@@ -12,6 +12,7 @@ import 'package:fixly_app/services/building_context_service.dart';
 import 'package:fixly_app/services/voting_service.dart';
 import 'package:fixly_app/screens/voting_list_screen.dart';
 import 'package:fixly_app/screens/create_announcement_screen.dart';
+import 'package:fixly_app/screens/chairman_building_selection_screen.dart';
 class ChairmanHomeScreen extends StatefulWidget {
   const ChairmanHomeScreen({super.key});
 
@@ -60,68 +61,33 @@ class _ChairmanHomeScreenState extends State<ChairmanHomeScreen> {
       }
 
       final buildingId = context.buildingId!;
-
-      // ВАЖНО: раньше все три запроса (tasks/proposals/announcements)
-      // шли последовательно в одном try — если хотя бы один падал
-      // (например, proposals.building_id не существовала в реальной
-      // схеме БД), это: 1) обнуляло уже успешно загруженные данные
-      // (tasks мог загрузиться нормально, но так и не попадал в setState),
-      // 2) _context никогда не устанавливался, из-за чего на экране
-      // одновременно показывались два противоречащих друг другу
-      // сообщения — "Нет привязки к дому" и текст Postgres-ошибки.
-      // Теперь каждый запрос обёрнут отдельно: одна сломанная таблица
-      // не рушит весь дашборд, а частичные ошибки собираются и
-      // показываются одним понятным баннером.
-      final errors = <String>[];
-
-      List<Map<String, dynamic>> tasks = [];
-      try {
-        final tasksResp = await _sb
-            .from('tasks')
-            .select()
-            .eq('building_id', buildingId)
-            .order('created_at', ascending: false)
-            .limit(20);
-        tasks = List<Map<String, dynamic>>.from(tasksResp as List);
-      } catch (e) {
-        errors.add('Заявки: $e');
-      }
-
-      List<Map<String, dynamic>> proposals = [];
-      try {
-        final proposalsResp = await _sb
-            .from('proposals')
-            .select()
-            .eq('building_id', buildingId)
-            .eq('status', 'active')
-            .order('created_at', ascending: false)
-            .limit(5);
-        proposals = List<Map<String, dynamic>>.from(proposalsResp as List);
-      } catch (e) {
-        errors.add('Голосования: $e');
-      }
-
-      List<Map<String, dynamic>> announcements = [];
-      try {
-        final announcementsResp = await _sb
-            .from('announcements')
-            .select()
-            .eq('building_id', buildingId)
-            .order('created_at', ascending: false)
-            .limit(5);
-        announcements =
-            List<Map<String, dynamic>>.from(announcementsResp as List);
-      } catch (e) {
-        errors.add('Объявления: $e');
-      }
+      final tasksResp = await _sb
+          .from('tasks')
+          .select()
+          .eq('building_id', buildingId)
+          .order('created_at', ascending: false)
+          .limit(20);
+      final proposalsResp = await _sb
+          .from('proposals')
+          .select()
+          .eq('building_id', buildingId)
+          .eq('status', 'active')
+          .order('created_at', ascending: false)
+          .limit(5);
+      final announcementsResp = await _sb
+          .from('announcements')
+          .select()
+          .eq('building_id', buildingId)
+          .order('created_at', ascending: false)
+          .limit(5);
 
       if (mounted) {
         setState(() {
           _context = context;
-          _tasks = tasks;
-          _proposals = proposals;
-          _announcements = announcements;
-          _error = errors.isEmpty ? null : errors.join('\n');
+          _tasks = List<Map<String, dynamic>>.from(tasksResp as List);
+          _proposals = List<Map<String, dynamic>>.from(proposalsResp as List);
+          _announcements =
+              List<Map<String, dynamic>>.from(announcementsResp as List);
           _isLoading = false;
         });
       }
@@ -475,8 +441,8 @@ Widget _buildQuickActions(Color card, bool isDark) {
                 );
                 if (ctx.mounted) Navigator.pop(ctx, row);
               } catch (e) {
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text(e.toString())),
                   );
                 }
@@ -486,10 +452,13 @@ Widget _buildQuickActions(Color card, bool isDark) {
           ),
         ],
       ),
-    );
-    titleCtrl.dispose();
-    descriptionCtrl.dispose();
-    daysCtrl.dispose();
+      );
+      
+    Future.delayed(const Duration(seconds: 1), () {
+      titleCtrl.dispose();
+      descriptionCtrl.dispose();
+      daysCtrl.dispose();
+    });
 
     if (created != null && mounted) {
       await _load();
@@ -643,6 +612,10 @@ Widget _buildQuickActions(Color card, bool isDark) {
         child: Text(text, style: const TextStyle(color: Colors.grey)),
       );
 
+  // Раньше это был просто статичный текст без действия — председатель
+  // видел "нет привязки к дому", но не мог ничего с этим сделать прямо
+  // отсюда. Теперь кнопка ведёт на ChairmanBuildingSelectionScreen и
+  // перезагружает дашборд после возврата.
   Widget _buildNoBuilding(Color card, bool isDark) => Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -650,8 +623,35 @@ Widget _buildQuickActions(Color card, bool isDark) {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.orange.withOpacity(0.35)),
         ),
-        child: const Text(
-          'Нет подтвержденной привязки к дому. Управленческие функции станут доступны после проверки председателя/управляющего.',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Нет подтвержденной привязки к дому. Выберите или создайте дом, чтобы открыть управленческие функции.',
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const ChairmanBuildingSelectionScreen()),
+                  );
+                  _load();
+                },
+                icon: const Icon(LucideIcons.building2, size: 18, color: Colors.white),
+                label: const Text('Выбрать дом',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+              ),
+            ),
+          ],
         ),
       );
 

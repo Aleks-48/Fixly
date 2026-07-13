@@ -416,7 +416,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
               ),
               child: Text(e.value,
                   style: TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600,
+                    fontSize: 14, fontWeight: FontWeight.w600,
                     color: sel ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
                   )),
             ),
@@ -596,7 +596,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     child: Text(
                       lang == 'ru' ? 'Ожидает' : 'Күтуде',
                       style: const TextStyle(
-                          color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold),
+                          color: Colors.orange, fontSize: 14, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -719,7 +719,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     style: TextStyle(
                         color: color, fontWeight: FontWeight.bold, fontSize: 14)),
                 Text(subtitle,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                    style: const TextStyle(color: Colors.grey, fontSize: 14)),
               ],
             ),
           ),
@@ -780,7 +780,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                   Icon(LucideIcons.camera, color: Colors.blueAccent, size: 24),
                   const SizedBox(height: 6),
                   const Text('Камера',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      style: TextStyle(fontSize: 14, color: Colors.grey)),
                 ],
               ),
             ),
@@ -803,7 +803,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                   Icon(LucideIcons.image, color: Colors.blueAccent, size: 24),
                   const SizedBox(height: 6),
                   const Text('Галерея',
-                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      style: TextStyle(fontSize: 14, color: Colors.grey)),
                 ],
               ),
             ),

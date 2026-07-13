@@ -96,7 +96,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("Fixly AI", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
-                const Text("в сети", style: TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold)),
+                const Text("в сети", style: TextStyle(fontSize: 13, color: Colors.green, fontWeight: FontWeight.bold)),
               ],
             ),
           ],
@@ -127,7 +127,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                 itemCount: _quickSuggestions.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, index) => ActionChip(
-                  label: Text(_quickSuggestions[index], style: const TextStyle(fontSize: 12)),
+                  label: Text(_quickSuggestions[index], style: const TextStyle(fontSize: 14)),
                   onPressed: () => _sendMessage(_quickSuggestions[index]),
                 ),
               ),

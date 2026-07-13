@@ -515,7 +515,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
                     color: isSelected
                         ? Colors.white
@@ -570,7 +570,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                   const SizedBox(height: 4),
                   Text(label,
                       style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: isSelected
                               ? color
@@ -705,7 +705,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               const BorderSide(color: Colors.redAccent, width: 1.5),
         ),
         errorStyle:
-            const TextStyle(color: Colors.redAccent, fontSize: 11),
+            const TextStyle(color: Colors.redAccent, fontSize: 14),
         contentPadding: EdgeInsets.symmetric(
           horizontal: 14,
           vertical: maxLines > 1 ? 12 : 14,

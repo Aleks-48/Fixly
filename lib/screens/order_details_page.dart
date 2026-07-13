@@ -176,7 +176,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                           ? 'Соответствует рыночным ценам 2024–25'
                           : '2024–25 жылғы нарық бағасына сәйкес'),
                   style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 14,
                       color: color.withOpacity(0.8)),
                 ),
               ],
@@ -385,7 +385,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
       ),
       child: Text(t,
           style: TextStyle(
-              color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+              color: c, fontSize: 14, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -458,7 +458,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                     Text(
                       lang == 'ru' ? 'Заказчик' : 'Тапсырыс беруші',
                       style: const TextStyle(
-                          fontSize: 12, color: Colors.grey),
+                          fontSize: 14, color: Colors.grey),
                     ),
                   ],
                 ),
@@ -592,7 +592,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                                   .format(date.toLocal()),
                               style: const TextStyle(
                                   color: Colors.grey,
-                                  fontSize: 11),
+                                  fontSize: 14),
                             ),
                           ],
                         ),

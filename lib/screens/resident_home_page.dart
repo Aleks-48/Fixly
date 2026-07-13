@@ -269,7 +269,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     child: Text(
                       '${lang == 'ru' ? 'Квартира' : 'Пәтер'} #$_apartment',
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 12),
+                          color: Colors.white, fontSize: 14),
                     ),
                   ),
                 ],
@@ -352,7 +352,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   a.label as String,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: a.color as Color,
                       height: 1.2),
@@ -411,7 +411,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                     : (lang == 'ru' ? 'Новая' : 'Жаңа'),
                 style: TextStyle(
                     color: color,
-                    fontSize: 10,
+                    fontSize: 13,
                     fontWeight: FontWeight.bold),
               ),
             ),
@@ -459,7 +459,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                   child: const Text('СРОЧНО',
                       style: TextStyle(
                           color: Colors.red,
-                          fontSize: 9,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(width: 8),
@@ -475,14 +475,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
               ),
               Text(DateFormat('dd.MM').format(date),
                   style: const TextStyle(
-                      fontSize: 11, color: Colors.grey)),
+                      fontSize: 14, color: Colors.grey)),
             ],
           ),
           if (content.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(content,
                 style:
-                    const TextStyle(fontSize: 12, color: Colors.grey),
+                    const TextStyle(fontSize: 14, color: Colors.grey),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis),
           ],
@@ -565,7 +565,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
                             color: isDark ? Colors.white : Colors.black87)),
                     Text(label,
                         style: const TextStyle(
-                            fontSize: 10, color: Colors.grey)),
+                            fontSize: 13, color: Colors.grey)),
                   ],
                 ),
               ],

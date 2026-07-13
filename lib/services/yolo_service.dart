@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // ── Результат детекции ─────────────────────────────────────
 class DefectDetection {
@@ -147,12 +148,17 @@ const _defectMeta = <String, Map<String, String>>{
 
 // ── Сам сервис ─────────────────────────────────────────────
 class YoloService {
-  // URL вашего Python FastAPI сервера с YOLOv8
-  // Для локального тестирования: 'http://10.0.2.2:8000' (Android emulator)
-  // Для продакшн: URL вашего сервера
-  static const String _baseUrl = 'https://your-yolo-api.fixly.kz';
+  // URL вашего Python FastAPI сервера с YOLOv8 читаем из .env
+  static String get _baseUrl => dotenv.env['YOLO_API_URL'] ?? 'https://your-yolo-api.fixly.kz';
 
-  static const Duration _timeout = Duration(seconds: 20);
+  static Duration get _timeout => Duration(
+      seconds: int.tryParse(dotenv.env['YOLO_TIMEOUT_SECONDS'] ?? '20') ?? 20);
+
+  static double get _confidenceThreshold =>
+      double.tryParse(dotenv.env['YOLO_CONFIDENCE_THRESHOLD'] ?? '0.4') ?? 0.4;
+      
+  static int get _maxDetections =>
+      int.tryParse(dotenv.env['YOLO_MAX_DETECTIONS'] ?? '10') ?? 10;
 
   // ── Анализ изображения ────────────────────────────────────
   static Future<List<DefectDetection>> analyzeImage(
@@ -186,8 +192,8 @@ class YoloService {
         bytes,
         filename: 'defect_${DateTime.now().millisecondsSinceEpoch}.jpg',
       ))
-      ..fields['confidence_threshold'] = '0.4'
-      ..fields['max_detections']        = '10';
+      ..fields['confidence_threshold'] = _confidenceThreshold.toString()
+      ..fields['max_detections']       = _maxDetections.toString();
 
     final streamedResponse =
         await request.send().timeout(_timeout);
@@ -204,7 +210,7 @@ class YoloService {
 
     return detections
         .map((d) => DefectDetection.fromJson(d as Map<String, dynamic>))
-        .where((d) => d.confidence >= 0.4)
+        .where((d) => d.confidence >= _confidenceThreshold)
         .toList()
       ..sort((a, b) => b.confidence.compareTo(a.confidence));
   }

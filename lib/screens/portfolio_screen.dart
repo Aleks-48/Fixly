@@ -377,7 +377,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                   title,
                   style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 12,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,

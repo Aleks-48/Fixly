@@ -170,7 +170,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               lang == 'ru' 
                 ? "Введите изменения (например: рост цен на лифты +20%)" 
                 : "Өзгерістерді енгізіңіз (мыс: лифт бағасы +20%)",
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -343,6 +343,35 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     }
   }
 
+  Future<void> _handleFinancialPdfGeneration(String lang, double spent) async {
+    setState(() => _isGeneratingPdf = true);
+    try {
+      final supabase = Supabase.instance.client;
+      List<Map<String, dynamic>> expenses = [];
+      if (_buildingId != null && _buildingId!.isNotEmpty) {
+        expenses = List<Map<String, dynamic>>.from(
+          await supabase.from('tasks')
+            .select()
+            .eq('building_id', _buildingId!)
+            .eq('status', 'completed')
+            .order('completed_at', ascending: false)
+        );
+      }
+
+      await PdfReportService.exportAndOpenFinancialPdf(
+        eosiBalance: _eosiBalance,
+        capitalBalance: _capitalBalance,
+        totalSpent: spent,
+        expenses: expenses,
+        address: "Ваш адрес", // Ideally fetched from context
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    } finally {
+      if (mounted) setState(() => _isGeneratingPdf = false);
+    }
+  }
+
   // --- 6. ОСНОВНОЙ BUILD ---
   @override
   Widget build(BuildContext context) {
@@ -425,7 +454,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                         _buildSectionHeader(lang == 'ru' ? "Статус дома" : "Үйдің күйі"),
                         _buildHealthIndicator(health, active, lang),
                         const SizedBox(height: 30),
-                        _buildReportButton(lang),
+                        _buildReportButtons(lang, spent),
                         const SizedBox(height: 50),
                       ],
                     ),
@@ -465,7 +494,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ", style: const TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.bold)),
+              Text(lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ", style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
               Text("${spent.toInt()} ₸", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
             ],
           )
@@ -478,7 +507,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 9, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 13, fontWeight: FontWeight.bold)),
         Text("${val.toInt()} ₸", style: TextStyle(color: col, fontSize: 18, fontWeight: FontWeight.bold)),
       ],
     );
@@ -500,7 +529,7 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
             children: [
               const Icon(LucideIcons.sparkles, color: Colors.blueAccent, size: 16),
               const SizedBox(width: 8),
-              Text("AI ANALYTICS", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.blueAccent.withOpacity(0.7))),
+              Text("AI ANALYTICS", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.blueAccent.withOpacity(0.7))),
             ],
           ),
           const SizedBox(height: 10),
@@ -540,8 +569,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(e.value['label'], style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  Text("+${(trend * 100).toInt()}%", style: TextStyle(color: e.value['color'], fontWeight: FontWeight.bold, fontSize: 12)),
+                  Text(e.value['label'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                  Text("+${(trend * 100).toInt()}%", style: TextStyle(color: e.value['color'], fontWeight: FontWeight.bold, fontSize: 14)),
                 ],
               ),
               const SizedBox(height: 6),
@@ -568,22 +597,43 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildReportButton(String lang) {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton.icon(
-        onPressed: _isGeneratingPdf ? null : () => _handlePdfGeneration(lang),
-        icon: const Icon(LucideIcons.fileDown, color: Colors.white),
-        label: Text(lang == 'ru' ? "СКАЧАТЬ ЛИСТ ГОЛОСОВАНИЯ" : "ЖҮКТЕУ"),
-        style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
-      ),
+  Widget _buildReportButtons(String lang, double spent) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: ElevatedButton.icon(
+            onPressed: _isGeneratingPdf ? null : () => _handlePdfGeneration(lang),
+            icon: const Icon(LucideIcons.fileDown, color: Colors.white),
+            label: Text(lang == 'ru' ? "СКАЧАТЬ ЛИСТ ГОЛОСОВАНИЯ" : "ДАУЫС БЕРУ ПАРАҒЫН ЖҮКТЕУ"),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: OutlinedButton.icon(
+            onPressed: _isGeneratingPdf ? null : () => _handleFinancialPdfGeneration(lang, spent),
+            icon: const Icon(LucideIcons.fileText, color: Colors.blueAccent),
+            label: Text(
+              lang == 'ru' ? "ВЫГРУЗИТЬ ФИН. ОТЧЕТ" : "ҚАРЖЫЛЫҚ ЕСЕПТІ ЖҮКТЕУ",
+              style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.blueAccent, width: 2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))
+            ),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildSectionHeader(String title) => Padding(
     padding: const EdgeInsets.only(bottom: 12),
-    child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1)),
+    child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1)),
   );
 
   Widget _buildOverlayLoader(String text) => Container(

@@ -28,6 +28,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
   bool _isAnalyzing = false;
   
   File? _imageFile;
+  double? _imageAspectRatio;
   List<DefectDetection> _detections = [];
   String? _masterCategory;
   String? _recommendationRu;
@@ -93,7 +94,6 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
 
   Future<void> _analyzeImage(File image) async {
     setState(() {
-      _imageFile = image;
       _isAnalyzing = true;
       _detections.clear();
       _masterCategory = null;
@@ -101,15 +101,18 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
     });
 
     try {
-      // ВАЖНО: раньше вызывался YoloService.analyzeDefect(image) — метод
-      // был пустой заглушкой (`async {}`, всегда возвращает null), а
-      // результат приводился к типу YoloResult, определённому локально
-      // прямо в этом файле (дублируя DefectDetection из yolo_service.dart
-      // с другим набором полей). Поскольку analyzeDefect всегда отдавал
-      // null, каст `as YoloResult?` тривиально проходил, но result был
-      // всегда null — сканер никогда не находил дефекты, при любом фото.
-      // Настоящая рабочая реализация (реальный вызов backend) лежит в
-      // YoloService.analyzeImage() и всегда была не задействована.
+      // Сначала декодируем картинку, чтобы сразу определить её пропорции (Aspect Ratio)
+      final bytes = await image.readAsBytes();
+      final decodedImage = await decodeImageFromList(bytes);
+      final aspect = decodedImage.width / decodedImage.height;
+
+      if (mounted) {
+        setState(() {
+          _imageFile = image;
+          _imageAspectRatio = aspect;
+        });
+      }
+
       final detections = await YoloService.analyzeImage(image);
 
       if (mounted) {
@@ -140,6 +143,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
   void _reset() {
     setState(() {
       _imageFile = null;
+      _imageAspectRatio = null;
       _detections.clear();
       _masterCategory = null;
       _recommendationRu = null;
@@ -188,42 +192,69 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                 ],
               ),
               clipBehavior: Clip.hardEdge,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (_imageFile == null && _isCameraInitialized)
-                    CameraPreview(_cameraCtrl!),
-                  
-                  if (_imageFile != null)
-                    Image.file(_imageFile!, fit: BoxFit.cover),
-                  
-                  if (_imageFile != null && _detections.isNotEmpty && !_isAnalyzing)
-                    CustomPaint(
-                      painter: _BBoxPainter(_detections),
-                    ),
-
-                  if (_isAnalyzing)
-                    Container(
-                      color: Colors.black.withOpacity(0.6),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
+              child: _imageFile != null && _imageAspectRatio != null
+                  ? Center(
+                      child: AspectRatio(
+                        aspectRatio: _imageAspectRatio!,
+                        child: Stack(
+                          fit: StackFit.expand,
                           children: [
-                            const CircularProgressIndicator(
-                              color: Colors.blueAccent,
-                              strokeWidth: 3,
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              lang == 'ru' ? "ИИ распознает поломку..." : "ЖИ ақауды іздеуде...",
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
-                            ),
+                            Image.file(_imageFile!, fit: BoxFit.fill),
+                            if (_detections.isNotEmpty && !_isAnalyzing)
+                              CustomPaint(
+                                painter: _BBoxPainter(_detections),
+                              ),
+                            if (_isAnalyzing)
+                              Container(
+                                color: Colors.black.withOpacity(0.6),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const CircularProgressIndicator(
+                                        color: Colors.blueAccent,
+                                        strokeWidth: 3,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      Text(
+                                        lang == 'ru' ? "ИИ распознает поломку..." : "ЖИ ақауды іздеуде...",
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
+                    )
+                  : Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (_imageFile == null && _isCameraInitialized)
+                          CameraPreview(_cameraCtrl!),
+                        if (_isAnalyzing)
+                          Container(
+                            color: Colors.black.withOpacity(0.6),
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const CircularProgressIndicator(
+                                    color: Colors.blueAccent,
+                                    strokeWidth: 3,
+                                  ),
+                                  const SizedBox(height: 20),
+                                  Text(
+                                    lang == 'ru' ? "ИИ распознает поломку..." : "ЖИ ақауды іздеуде...",
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
-                ],
-              ),
             ),
           ),
 
@@ -338,7 +369,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-              child: Text("${_detections.length} объекта", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)),
+              child: Text("${_detections.length} объекта", style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 14)),
             )
           ],
         ),
@@ -356,7 +387,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
             backgroundColor: Colors.blueAccent.withOpacity(0.05),
             side: BorderSide.none,
             avatar: Icon(LucideIcons.alertCircle, size: 14, color: Color(d.severityColor)),
-            label: Text(d.labelRu, style: const TextStyle(fontSize: 12)),
+            label: Text(d.labelRu, style: const TextStyle(fontSize: 14)),
           )).toList(),
         ),
 
@@ -436,7 +467,7 @@ class _BBoxPainter extends CustomPainter {
       final textPainter = TextPainter(
         text: TextSpan(
           text: text,
-          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
         ),
         textDirection: TextDirection.ltr,
       )..layout();

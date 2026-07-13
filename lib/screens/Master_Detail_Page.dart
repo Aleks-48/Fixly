@@ -330,7 +330,7 @@ class _MasterDetailPageState extends State<MasterDetailPage>
                 fontWeight: FontWeight.bold, fontSize: 18)),
         Text(label,
             style:
-                const TextStyle(color: Colors.grey, fontSize: 12)),
+                const TextStyle(color: Colors.grey, fontSize: 14)),
       ],
     );
   }

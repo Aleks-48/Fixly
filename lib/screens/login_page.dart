@@ -45,6 +45,52 @@ class _LoginPageState extends State<LoginPage>
     _animCtrl.forward();
   }
 
+  Future<void> _completeGoogleSignIn(User user) async {
+    try {
+      final existingProfile = await _supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+      final isNewProfile = existingProfile == null;
+
+      if (isNewProfile) {
+        final metadata = user.userMetadata ?? {};
+        await _supabase.from('profiles').insert({
+          'id': user.id,
+          'full_name': metadata['full_name'] ?? metadata['name'] ?? '',
+          'avatar_url': metadata['avatar_url'] ?? metadata['picture'],
+          'email': user.email,
+          'role': 'resident',
+          'user_type': 'resident',
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
+
+      if (mounted) {
+          setState(() => _isGoogleLoading = false);
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) =>
+                  isNewProfile ? const OsiSelectionScreen() : const MainWrapper(),
+            ),
+            (_) => false,
+          );
+      }
+    } catch (e) {
+      debugPrint('Google profile setup error: $e');
+      if (mounted) {
+        setState(() {
+          _isGoogleLoading = false;
+          _errorMessage = appLanguage.value == 'ru'
+              ? 'Не удалось завершить настройку профиля'
+              : 'Профильді баптау аяқталмады';
+        });
+      }
+    }
+  }
+
   void _setupAnimations() {
     _animCtrl = AnimationController(
         vsync: this,
@@ -116,80 +162,27 @@ class _LoginPageState extends State<LoginPage>
     setState(() { _isGoogleLoading = true; _errorMessage = null; });
 
     try {
-      const webClientId ='700103731510-4nuteqagkbgk0r9s05dfvj3ng3oh0944.apps.googleusercontent.com';
-      // ↑ Замени на свой Client ID из Google Cloud Console
-      //   (Проект → APIs & Services → Credentials → OAuth 2.0 Web Client)
-
+      const webClientId =
+          '700103731510-je08vr3c7k6g693pbb1kd9mrdlr5v179.apps.googleusercontent.com';
       final googleSignIn = GoogleSignIn(
         serverClientId: webClientId,
-        scopes: ['email', 'profile'],
+        scopes: const ['email', 'profile'],
       );
-
       final googleUser = await googleSignIn.signIn();
-      if (googleUser == null) {
-        // Пользователь закрыл диалог
-        setState(() => _isGoogleLoading = false);
-        return;
-      }
+      if (googleUser == null) return;
 
       final googleAuth = await googleUser.authentication;
-      final accessToken  = googleAuth.accessToken;
-      final idToken      = googleAuth.idToken;
-
-      if (idToken == null) {
-        throw Exception('Google ID token is null');
+      if (googleAuth.idToken == null) {
+        throw StateError('Google did not return an ID token');
       }
-
-      // Передаём Google токен в Supabase
-      await _supabase.auth.signInWithIdToken(
-        provider   : OAuthProvider.google,
-        idToken    : idToken,
-        accessToken: accessToken,
+      final response = await _supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: googleAuth.idToken!,
+        accessToken: googleAuth.accessToken,
       );
-
-      final user = _supabase.auth.currentUser;
-      if (user == null) throw Exception('User is null after Google sign-in');
-
-      // ВАЖНО: раньше здесь не было проверки на существование строки в
-      // profiles. Если человек логинился через Google, ни разу не пройдя
-      // RegisterPage, в auth.users запись создавалась, а в profiles — нет.
-      // Дальше любой .eq('id', uid).single()/maybeSingle() по профилю
-      // (BuildingContextService, profile_page.dart, home_page.dart и т.д.)
-      // либо падал, либо тихо считал роль 'resident' без возможности
-      // выбрать дом. Теперь создаём профиль, если его ещё нет, и ведём
-      // нового пользователя на выбор ОСИ, как и при обычной регистрации.
-      final existingProfile = await _supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', user.id)
-          .maybeSingle();
-
-      bool isNewProfile = false;
-      if (existingProfile == null) {
-        isNewProfile = true;
-        await _supabase.from('profiles').insert({
-          'id'        : user.id,
-          'full_name' : user.userMetadata?['full_name'] ??
-              user.userMetadata?['name'] ?? '',
-          'avatar_url': user.userMetadata?['avatar_url'] ??
-              user.userMetadata?['picture'],
-          'email'     : user.email,
-          'role'      : 'resident',
-          'user_type' : 'resident',
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
-
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(
-            builder: (_) =>
-                isNewProfile ? const OsiSelectionScreen() : const MainWrapper(),
-          ),
-          (_) => false,
-        );
-      }
+      final user = response.user;
+      if (user == null) throw StateError('Supabase did not create a session');
+      await _completeGoogleSignIn(user);
     } on AuthException catch (e) {
       _showError(_mapAuthError(e.message));
     } catch (e) {

@@ -12,25 +12,27 @@ import 'package:fixly_app/screens/masters_list_screen.dart';
 import 'package:fixly_app/screens/profile/my_Buildings_Screen.dart';
 import 'package:fixly_app/screens/chat_list_screen.dart';
 import 'package:fixly_app/screens/profile_page.dart';
+import 'package:fixly_app/screens/osi_selection_screen.dart';
 import 'package:fixly_app/screens/income_screen.dart';
 import 'package:fixly_app/screens/create_order_page.dart';
 import 'package:fixly_app/screens/profile/chairman_Analytics_Screen.dart';
 import 'package:fixly_app/screens/documents_screen.dart';
 import 'package:fixly_app/screens/library_screen.dart';
-import 'package:fixly_app/screens/resident_home_page.dart'; 
+import 'package:fixly_app/screens/resident_home_page.dart';
 import 'package:fixly_app/screens/market_screen.dart';
-import 'package:fixly_app/screens/voting_page.dart'; 
+import 'package:fixly_app/screens/voting_page.dart';
 import 'package:fixly_app/screens/my_work_screen.dart';
 import 'package:fixly_app/services/voting_service.dart';
 // Экраны председателя — были написаны, но не подключены к вкладкам
 // нижней навигации (см. пояснение у _MainWrapperState.pages ниже).
 import 'package:fixly_app/screens/chairman_home_screen.dart';
 import 'package:fixly_app/screens/chairman_more_screen.dart';
-import 'package:fixly_app/screens/incoming_call_screen.dart';
+import 'package:fixly_app/services/announcement_service.dart';
 // Ядро и утилиты
 import 'package:fixly_app/core/sheber_ata_helper.dart';
-import 'package:fixly_app/main.dart'; 
-import 'package:fixly_app/utils/app_texts.dart'; 
+import 'package:fixly_app/main.dart';
+import 'package:fixly_app/utils/app_texts.dart';
+import 'package:fixly_app/services/notification_service.dart';
 
 class MainWrapper extends StatefulWidget {
   const MainWrapper({super.key});
@@ -41,76 +43,37 @@ class MainWrapper extends StatefulWidget {
 
 class _MainWrapperState extends State<MainWrapper> {
   int _selectedIndex = 0;
-  String _userRole = 'resident'; 
+  String _userRole = 'resident';
   bool _isLoading = true;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
+
   final AudioPlayer _audioPlayer = AudioPlayer();
 
   bool _isTutorialActive = false;
   int _tutorialStep = 0;
-  Map<String, String> _helperMessage = {}; 
-
-  // ВАЖНО: раньше в приложении не было НИ ОДНОГО глобального слушателя
-  // таблицы `calls` — incoming_call_screen.dart существовал, но никто
-  // никогда его не открывал. MainWrapper смонтирован всё время, пока
-  // пользователь в приложении, поэтому это правильное место для
-  // realtime-подписки на входящие звонки.
-  RealtimeChannel? _incomingCallChannel;
+  Map<String, String> _helperMessage = {};
 
   @override
   void initState() {
     super.initState();
     _fetchUserRole();
-    _listenForIncomingCalls();
+    _initNotifications();
+  }
+
+  void _initNotifications() async {
+    await NotificationService.requestPermission();
+    if (mounted) NotificationService.setupForegroundListener(context);
   }
 
   @override
   void dispose() {
     _audioPlayer.dispose();
-    _incomingCallChannel?.unsubscribe();
     super.dispose();
-  }
-
-  void _listenForIncomingCalls() {
-    final myId = Supabase.instance.client.auth.currentUser?.id;
-    if (myId == null) return;
-
-    _incomingCallChannel = Supabase.instance.client
-        .channel('incoming_calls_$myId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
-          schema: 'public',
-          table: 'calls',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'receiver_id',
-            value: myId,
-          ),
-          callback: (payload) {
-            final row = payload.newRecord;
-            if (row['status'] != 'ringing') return;
-            if (!mounted) return;
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => IncomingCallScreen(
-                  callId: row['id'].toString(),
-                  callerId: row['caller_id']?.toString() ?? '',
-                  callerName: row['caller_name']?.toString() ?? 'Пользователь',
-                  callerAvatar: row['caller_avatar']?.toString(),
-                  taskId: row['task_id']?.toString() ?? '',
-                  taskTitle: row['task_title']?.toString() ?? '',
-                ),
-              ),
-            );
-          },
-        )
-        .subscribe();
   }
 
   String _getCleanLang(String lang) {
     String clean = lang.split('-')[0].split('_')[0].toLowerCase();
-    if (clean == 'kz') return 'kk'; 
+    if (clean == 'kz') return 'kk';
     return clean;
   }
 
@@ -152,9 +115,14 @@ class _MainWrapperState extends State<MainWrapper> {
 
     if (_userRole == 'resident') {
       Navigator.push(
-        context, 
-        MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId:'', masterName:'', prefillDescription: '',))
-      );
+          context,
+          MaterialPageRoute(
+              builder: (_) => const CreateOrderPage(
+                    initialCategory: '',
+                    masterId: '',
+                    masterName: '',
+                    prefillDescription: '',
+                  )));
       return;
     }
 
@@ -172,27 +140,39 @@ class _MainWrapperState extends State<MainWrapper> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  appLanguage.value == 'ru' ? "Что создать?" : "Не жасау керек?",
+                  appLanguage.value == 'ru'
+                      ? "Что создать?"
+                      : "Не жасау керек?",
                   style: TextStyle(
-                    fontSize: 20, 
-                    fontWeight: FontWeight.bold, 
-                    color: isDark ? Colors.white : Colors.black
-                  ),
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : Colors.black),
                 ),
                 const SizedBox(height: 20),
                 _buildMenuOption(
                   icon: LucideIcons.wrench,
-                  title: appLanguage.value == 'ru' ? "Заявка (Service)" : "Өтінім",
+                  title:
+                      appLanguage.value == 'ru' ? "Заявка (Service)" : "Өтінім",
                   color: Colors.blueAccent,
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateOrderPage(initialCategory: '', masterId:'', masterName:'', prefillDescription: '',)));
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const CreateOrderPage(
+                                  initialCategory: '',
+                                  masterId: '',
+                                  masterName: '',
+                                  prefillDescription: '',
+                                )));
                   },
                 ),
                 _buildMenuOption(
                   icon: LucideIcons.megaphone,
-                  title: appLanguage.value == 'ru' ? "Объявление (News)" : "Хабарландыру",
+                  title: appLanguage.value == 'ru'
+                      ? "Объявление (News)"
+                      : "Хабарландыру",
                   color: Colors.orangeAccent,
                   isDark: isDark,
                   onTap: () {
@@ -202,7 +182,9 @@ class _MainWrapperState extends State<MainWrapper> {
                 ),
                 _buildMenuOption(
                   icon: LucideIcons.checkSquare,
-                  title: appLanguage.value == 'ru' ? "Голосование (Voting)" : "Дауыс беру",
+                  title: appLanguage.value == 'ru'
+                      ? "Голосование (Voting)"
+                      : "Дауыс беру",
                   color: Colors.greenAccent,
                   isDark: isDark,
                   onTap: () {
@@ -219,9 +201,9 @@ class _MainWrapperState extends State<MainWrapper> {
   }
 
   Widget _buildMenuOption({
-    required IconData icon, 
-    required String title, 
-    required Color color, 
+    required IconData icon,
+    required String title,
+    required Color color,
     required VoidCallback onTap,
     required bool isDark,
   }) {
@@ -230,7 +212,10 @@ class _MainWrapperState extends State<MainWrapper> {
         backgroundColor: color.withOpacity(0.1),
         child: Icon(icon, color: color),
       ),
-      title: Text(title, style: TextStyle(color: isDark ? Colors.white : Colors.black87, fontWeight: FontWeight.w500)),
+      title: Text(title,
+          style: TextStyle(
+              color: isDark ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.w500)),
       trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
       onTap: onTap,
     );
@@ -251,7 +236,7 @@ class _MainWrapperState extends State<MainWrapper> {
         .select('building_id')
         .eq('id', user.id)
         .maybeSingle();
-    
+
     final String? myBuildingId = userData?['building_id']?.toString();
 
     // Если ID дома нет в базе - выводим ошибку
@@ -259,10 +244,18 @@ class _MainWrapperState extends State<MainWrapper> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(appLanguage.value == 'ru' 
-            ? "Ошибка: Дом не привязан к профилю. Выберите дом в настройках." 
-            : "Қате: Үй профильге тіркелмеген."),
+          content: Text(appLanguage.value == 'ru'
+              ? "Ошибка: Дом не привязан к профилю. Выберите дом в настройках."
+              : "Қате: Үй профильге тіркелмеген."),
           backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: appLanguage.value == 'ru' ? 'Выбрать' : 'Таңдау',
+            textColor: Colors.white,
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const OsiSelectionScreen()),
+            ),
+          ),
         ),
       );
       return;
@@ -273,35 +266,49 @@ class _MainWrapperState extends State<MainWrapper> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: isDark ? const Color(0xFF1F2937) : Colors.white,
-        title: Text(appLanguage.value == 'ru' ? "Новое объявление" : "Жаңа хабарландыру"),
+        title: Text(appLanguage.value == 'ru'
+            ? "Новое объявление"
+            : "Жаңа хабарландыру"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: titleController, 
-              decoration: InputDecoration(hintText: appLanguage.value == 'ru' ? "Заголовок" : "Тақырып")
-            ),
+                controller: titleController,
+                decoration: InputDecoration(
+                    hintText:
+                        appLanguage.value == 'ru' ? "Заголовок" : "Тақырып")),
             const SizedBox(height: 10),
             TextField(
-              controller: contentController, 
-              maxLines: 3, 
-              decoration: InputDecoration(hintText: appLanguage.value == 'ru' ? "Текст объявления" : "Мәтін")
-            ),
+                controller: contentController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                    hintText: appLanguage.value == 'ru'
+                        ? "Текст объявления"
+                        : "Мәтін")),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(appLanguage.value == 'ru' ? "Отмена" : "Бас тарту")),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(appLanguage.value == 'ru' ? "Отмена" : "Бас тарту")),
           ElevatedButton(
             onPressed: () async {
               if (titleController.text.isNotEmpty) {
                 try {
-                  await Supabase.instance.client.from('announcements').insert({
-                    'title': titleController.text,
-                    'content': contentController.text,
-                    'author_id': user.id,
-                    'building_id': myBuildingId,
-                  });
+                  await AnnouncementService.createAnnouncement(
+                    title: titleController.text,
+                    content: contentController.text,
+                    authorId: user.id,
+                    buildingId: myBuildingId,
+                  );
                   if (mounted) Navigator.pop(context);
+                  
+                  // Отправляем пуш жильцам
+                  NotificationService.notifyBuilding(
+                    buildingId: myBuildingId,
+                    title: appLanguage.value == 'ru' ? 'Новое объявление' : 'Жаңа хабарландыру',
+                    body: titleController.text,
+                  );
                 } catch (e) {
                   debugPrint("Ошибка сохранения объявления: $e");
                 }
@@ -328,13 +335,15 @@ class _MainWrapperState extends State<MainWrapper> {
         .select('building_id')
         .eq('id', user.id)
         .maybeSingle();
-    
+
     final String? myBuildingId = userData?['building_id']?.toString();
 
     if (myBuildingId == null || myBuildingId.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Ошибка: Невозможно запустить голосование без привязки к дому.")),
+        const SnackBar(
+            content: Text(
+                "Ошибка: Невозможно запустить голосование без привязки к дому.")),
       );
       return;
     }
@@ -346,7 +355,9 @@ class _MainWrapperState extends State<MainWrapper> {
         backgroundColor: isDark ? const Color(0xFF1F2937) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          appLanguage.value == 'ru' ? "Тема голосования" : "Дауыс беру тақырыбы",
+          appLanguage.value == 'ru'
+              ? "Тема голосования"
+              : "Дауыс беру тақырыбы",
           style: TextStyle(color: isDark ? Colors.white : Colors.black),
         ),
         content: TextField(
@@ -357,11 +368,15 @@ class _MainWrapperState extends State<MainWrapper> {
             hintStyle: const TextStyle(color: Colors.grey),
             filled: true,
             fillColor: isDark ? Colors.black26 : Colors.grey.shade100,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Отмена")),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Отмена")),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             onPressed: () async {
@@ -380,14 +395,23 @@ class _MainWrapperState extends State<MainWrapper> {
                   );
                   if (mounted) {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Голосование запущено!")));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("Голосование запущено!")));
                   }
+                  
+                  // Отправляем пуш жильцам
+                  NotificationService.notifyBuilding(
+                    buildingId: myBuildingId,
+                    title: appLanguage.value == 'ru' ? 'Новое голосование' : 'Жаңа дауыс беру',
+                    body: titleController.text,
+                  );
                 } catch (e) {
                   debugPrint("Ошибка создания голосования: $e");
                 }
               }
             },
-            child: const Text("Запустить", style: TextStyle(color: Colors.white)),
+            child:
+                const Text("Запустить", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -397,35 +421,47 @@ class _MainWrapperState extends State<MainWrapper> {
   // --- ТЬЮТОРИАЛ ЛОГИКА ---
   void _playStepVoice(int step, String lang) async {
     String cleanLang = _getCleanLang(lang);
-    String fileName = "${cleanLang}_step$step.mp3"; 
+    String fileName = "${cleanLang}_step$step.mp3";
     try {
-      await _audioPlayer.stop(); 
+      await _audioPlayer.stop();
       await _audioPlayer.play(AssetSource("sounds/tutorial/$fileName"));
-    } catch (e) { debugPrint("Файл озвучки не найден: $fileName"); }
+    } catch (e) {
+      debugPrint("Файл озвучки не найден: $fileName");
+    }
   }
 
   void _nextTutorialStep() {
-    final lang = appLanguage.value; 
+    final lang = appLanguage.value;
     setState(() {
       _tutorialStep++;
       switch (_tutorialStep) {
         case 1:
-          _selectedIndex = 0; 
-          _helperMessage = {'ru': 'Это ваша главная страница.', 'kk': 'Бұл басты бетіңіз.'};
+          _selectedIndex = 0;
+          _helperMessage = {
+            'ru': 'Это ваша главная страница.',
+            'kk': 'Бұл басты бетіңіз.'
+          };
           break;
         case 2:
-          _selectedIndex = 1; 
-          _helperMessage = {'ru': 'Тут список мастеров.', 'kk': 'Мұнда шеберлер тізімі.'};
+          _selectedIndex = 1;
+          _helperMessage = {
+            'ru': 'Тут список мастеров.',
+            'kk': 'Мұнда шеберлер тізімі.'
+          };
           break;
         case 3:
           _scaffoldKey.currentState?.openDrawer();
-          _helperMessage = {'ru': 'Боковое меню с инструментами.', 'kk': 'Құралдары бар бүйірлік мәзір.'};
+          _helperMessage = {
+            'ru': 'Боковое меню с инструментами.',
+            'kk': 'Құралдары бар бүйірлік мәзір.'
+          };
           break;
         default:
-          if (_scaffoldKey.currentState?.isDrawerOpen ?? false) Navigator.pop(context);
+          if (_scaffoldKey.currentState?.isDrawerOpen ?? false)
+            Navigator.pop(context);
           _isTutorialActive = false;
           _tutorialStep = 0;
-          _helperMessage = {}; 
+          _helperMessage = {};
           _audioPlayer.stop();
           return;
       }
@@ -457,8 +493,12 @@ class _MainWrapperState extends State<MainWrapper> {
             const ProfilePage(),
           ]
         : [
-            _userRole == 'resident' ? const ResidentHomePage() : const OrdersPage(),
-            _userRole == 'resident' ? const MastersListScreen() : const IncomeScreen(),
+            _userRole == 'resident'
+                ? const ResidentHomePage()
+                : const OrdersPage(),
+            _userRole == 'resident'
+                ? const MastersListScreen()
+                : const IncomeScreen(),
             const ChatListScreen(),
             const ProfilePage(),
           ];
@@ -479,10 +519,10 @@ class _MainWrapperState extends State<MainWrapper> {
               icon: const Icon(LucideIcons.menu, color: Colors.blueAccent),
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
             ),
-            title: Text(
-              _userRole == 'chairman' ? "Fixly ОСИ" : "Fixly", 
-              style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)
-            ),
+            title: Text(_userRole == 'chairman' ? "Fixly ОСИ" : "Fixly",
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black)),
             centerTitle: true,
           ),
           drawer: _buildDrawer(cleanLang, isDark),
@@ -490,36 +530,48 @@ class _MainWrapperState extends State<MainWrapper> {
             children: [
               IndexedStack(index: _selectedIndex, children: pages),
               Positioned(
-                bottom: 110, 
+                bottom: 110,
                 right: 16,
                 child: SheberAtaHelper(
                   languageCode: cleanLang,
-                  messages: _helperMessage.isNotEmpty 
-                      ? { cleanLang: _helperMessage[cleanLang] ?? _helperMessage['ru'] ?? '' } 
-                      : {}, 
-                  actions: _isTutorialActive ? [
-                    const SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: _nextTutorialStep,
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-                      child: Text(cleanLang == 'kk' ? 'Келесі' : 'Далее', style: const TextStyle(color: Colors.white)),
-                    )
-                  ] : null,
-                  onTap: () { if (!_isTutorialActive) _showHelperMenu(context, lang); }, 
+                  messages: _helperMessage.isNotEmpty
+                      ? {
+                          cleanLang: _helperMessage[cleanLang] ??
+                              _helperMessage['ru'] ??
+                              ''
+                        }
+                      : {},
+                  actions: _isTutorialActive
+                      ? [
+                          const SizedBox(height: 10),
+                          ElevatedButton(
+                            onPressed: _nextTutorialStep,
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blueAccent),
+                            child: Text(cleanLang == 'kk' ? 'Келесі' : 'Далее',
+                                style: const TextStyle(color: Colors.white)),
+                          )
+                        ]
+                      : null,
+                  onTap: () {
+                    if (!_isTutorialActive) _showHelperMenu(context, lang);
+                  },
                 ),
               ),
             ],
           ),
           bottomNavigationBar: _buildBottomBar(isDark, cleanLang),
-          floatingActionButton: (_userRole == 'chairman' || _userRole == 'resident') 
+          floatingActionButton: (_userRole == 'chairman' ||
+                  _userRole == 'resident')
               ? FloatingActionButton(
-                  onPressed: _onPlusButtonPressed, 
+                  onPressed: _onPlusButtonPressed,
                   backgroundColor: Colors.blueAccent,
                   shape: const CircleBorder(),
                   child: const Icon(Icons.add, color: Colors.white, size: 28),
-                ) 
+                )
               : null,
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerDocked,
         );
       },
     );
@@ -532,8 +584,10 @@ class _MainWrapperState extends State<MainWrapper> {
         children: [
           UserAccountsDrawerHeader(
             decoration: const BoxDecoration(color: Colors.blueAccent),
-            accountName: Text(_userRole.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
-            accountEmail: Text(Supabase.instance.client.auth.currentUser?.email ?? ""),
+            accountName: Text(_userRole.toUpperCase(),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            accountEmail:
+                Text(Supabase.instance.client.auth.currentUser?.email ?? ""),
             currentAccountPicture: const CircleAvatar(
               backgroundColor: Colors.white,
               child: Icon(LucideIcons.user, color: Colors.blueAccent, size: 40),
@@ -544,7 +598,13 @@ class _MainWrapperState extends State<MainWrapper> {
             title: Text(lang == 'kk' ? "Дауыс беру" : "Голосование"),
             onTap: () {
               Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const VotingPage(proposalId: '', proposalTitle: '',)));
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (c) => const VotingPage(
+                            proposalId: '',
+                            proposalTitle: '',
+                          )));
             },
           ),
           if (_userRole == 'resident')
@@ -553,25 +613,31 @@ class _MainWrapperState extends State<MainWrapper> {
               title: Text(lang == 'kk' ? "Маркет" : "Маркет"),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const MarketScreen()));
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (c) => const MarketScreen()));
               },
             ),
           if (_userRole == 'chairman') ...[
             ListTile(
               leading: const Icon(LucideIcons.fileText, color: Colors.blue),
               title: Text(lang == 'kk' ? "Құжаттар" : "Документы"),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const DocumentsScreen())),
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (c) => const DocumentsScreen())),
             ),
             ListTile(
               leading: const Icon(LucideIcons.barChart3, color: Colors.purple),
               title: Text(lang == 'kk' ? "Аналитика" : "Аналитика"),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const ChairmanAnalyticsScreen())),
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (c) => const ChairmanAnalyticsScreen())),
             ),
           ],
           ListTile(
             leading: const Icon(LucideIcons.library, color: Colors.teal),
             title: Text(lang == 'kk' ? "Білім базасы" : "База знаний"),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const LibraryScreen())),
+            onTap: () => Navigator.push(context,
+                MaterialPageRoute(builder: (c) => const LibraryScreen())),
           ),
           const Spacer(),
           const Divider(),
@@ -588,33 +654,49 @@ class _MainWrapperState extends State<MainWrapper> {
 
   Widget _buildBottomBar(bool isDark, String cleanLang) {
     bool hasNotch = (_userRole == 'chairman' || _userRole == 'resident');
-    return BottomAppBar(
-      shape: hasNotch ? const CircularNotchedRectangle() : null,
-      notchMargin: 8.0,
-      color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
-      child: SizedBox(
-        height: 65,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildNavItem(0, LucideIcons.home, cleanLang == 'kk' ? 'Басты' : 'Главная'),
-            // Раньше вкладка 1 всегда была "Мастера" (кроме роли master),
-            // хотя для председателя на неё теперь подключён ChairmanMoreScreen
-            // (меню: аналитика, объявления, голосования и т.д.) — подпись и
-            // иконка должны отражать реальный контент вкладки.
-            _buildNavItem(
-              1,
-              _userRole == 'master'
-                  ? LucideIcons.dollarSign
-                  : (_userRole == 'chairman' ? LucideIcons.layoutGrid : LucideIcons.wrench),
-              _userRole == 'master'
-                  ? 'Доход'
-                  : (_userRole == 'chairman' ? 'Ещё' : 'Мастера'),
-            ),
-            if (hasNotch) const SizedBox(width: 48),
-            _buildNavItem(2, LucideIcons.messageSquare, 'Чаты'),
-            _buildNavItem(3, LucideIcons.user, 'Профиль'),
-          ],
+    // ВАЖНО: раньше высота бара была жёстко зафиксирована в 65px и не
+    // учитывала нижний safe-area отступ устройства (home indicator на
+    // iPhone, жестовая полоса на Android). Row с иконкой+подписью физически
+    // не помещался в эти 65px на таких устройствах — отсюда постоянный
+    // "BOTTOM OVERFLOWED BY 6.0 PIXELS" под нав-баром на скриншотах.
+    // Фикс: оборачиваем в SafeArea(top:false) и увеличиваем высоту с
+    // запасом (78dp — как в остальной дизайн-системе v2, см. app_theme.dart),
+    // плюс FittedBox на подписи как защита от переполнения на любых
+    // системных шрифтах/масштабах текста.
+    return SafeArea(
+      top: false,
+      child: BottomAppBar(
+        shape: hasNotch ? const CircularNotchedRectangle() : null,
+        notchMargin: 8.0,
+        color: isDark ? const Color(0xFF1A1A1A) : Colors.white,
+        padding: EdgeInsets.zero,
+        child: SizedBox(
+          height: 78,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(
+                  0, LucideIcons.home, cleanLang == 'kk' ? 'Басты' : 'Главная'),
+              // Раньше вкладка 1 всегда была "Мастера" (кроме роли master),
+              // хотя для председателя на неё теперь подключён ChairmanMoreScreen
+              // (меню: аналитика, объявления, голосования и т.д.) — подпись и
+              // иконка должны отражать реальный контент вкладки.
+              _buildNavItem(
+                1,
+                _userRole == 'master'
+                    ? LucideIcons.dollarSign
+                    : (_userRole == 'chairman'
+                        ? LucideIcons.layoutGrid
+                        : LucideIcons.wrench),
+                _userRole == 'master'
+                    ? 'Доход'
+                    : (_userRole == 'chairman' ? 'Ещё' : 'Мастера'),
+              ),
+              if (hasNotch) const SizedBox(width: 48),
+              _buildNavItem(2, LucideIcons.messageSquare, 'Чаты'),
+              _buildNavItem(3, LucideIcons.user, 'Профиль'),
+            ],
+          ),
         ),
       ),
     );
@@ -622,15 +704,28 @@ class _MainWrapperState extends State<MainWrapper> {
 
   Widget _buildNavItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
-    return InkWell(
-      onTap: () => setState(() => _selectedIndex = index),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: isSelected ? Colors.blueAccent : Colors.grey, size: 24),
-          Text(label, style: TextStyle(fontSize: 10, color: isSelected ? Colors.blueAccent : Colors.grey)),
-        ],
+    return Expanded(
+      child: InkWell(
+        onTap: () => setState(() => _selectedIndex = index),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                color: isSelected ? Colors.blueAccent : Colors.grey, size: 24),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                    fontSize: 11,
+                    color: isSelected ? Colors.blueAccent : Colors.grey),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -658,12 +753,13 @@ class _MainWrapperState extends State<MainWrapper> {
                 setState(() {
                   _isTutorialActive = true;
                   _tutorialStep = 0;
-                  _nextTutorialStep(); 
+                  _nextTutorialStep();
                 });
               },
             ),
             ListTile(
-              leading: const Icon(Icons.support_agent, color: Colors.orangeAccent),
+              leading:
+                  const Icon(Icons.support_agent, color: Colors.orangeAccent),
               title: Text(AppTexts.get('support', cleanLang)),
               onTap: () => Navigator.pop(context),
             ),
