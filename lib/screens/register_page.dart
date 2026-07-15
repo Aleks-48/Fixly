@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb; // Добавлен импорт для поддержки Web
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:fixly_app/main.dart';
@@ -95,26 +96,36 @@ class _RegisterPageState extends State<RegisterPage>
     });
 
     try {
+      final String userType =
+          _selectedRole == 'master' ? 'contractor' : 'resident';
+
+      // РЕШЕНИЕ: используем userMetadata напрямую для совместимости с v1.x
       final res = await _supabase.auth.signUp(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
+        data: {
+          'full_name': _nameCtrl.text.trim(),
+          'role': _selectedRole,
+          'user_type': userType,
+        },
       );
 
       final user = res.user;
       if (user == null) throw Exception('User is null after signUp');
 
-      // ИСПРАВЛЕНИЕ: Явно указываем user_type, чтобы БД не ставила "master" по умолчанию
-      final String userType =
-          _selectedRole == 'master' ? 'contractor' : 'resident';
-
-      await _supabase.from('profiles').upsert({
-        'id': user.id,
-        'full_name': _nameCtrl.text.trim(),
-        'role': _selectedRole, // Сохраняется выбранная роль (в т.ч. 'osi')
-        'user_type': userType, // Явная передача типа
-        'email': _emailCtrl.text.trim(),
-        'created_at': DateTime.now().toIso8601String(),
-      });
+      // Делаем upsert только если сессия уже активна (email-подтверждение отключено).
+      // Если сессия пустая (нужно подтверждение), этот шаг пропускается, так как у неавторизованного юзера
+      // нет прав на запись по RLS, а триггер в БД уже успешно создал запись с правильными метаданными.
+      if (res.session != null) {
+        await _supabase.from('profiles').upsert({
+          'id': user.id,
+          'full_name': _nameCtrl.text.trim(),
+          'role': _selectedRole, // Сохраняется выбранная роль (в т.ч. 'osi')
+          'user_type': userType, // Явная передача типа
+          'email': _emailCtrl.text.trim(),
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      }
 
       if (mounted) {
         // Если Supabase сразу авторизует (без подтверждения почты) — кидаем на экран выбора ОСИ
@@ -141,19 +152,6 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   // ── GOOGLE SIGN-UP ────────────────────────────────────────
-  // ВАЖНО: раньше здесь стоял google_sign_in package + signInWithIdToken()
-  // с зашитым webClientId. Переходим на signInWithOAuth с deep-link
-  // редиректом (io.supabase.fixly://login-callback) — тот же паттерн,
-  // что и в login_page.dart. Требует настроенного Google-провайдера в
-  // Supabase Dashboard и зарегистрированной схемы io.supabase.fixly в
-  // нативных конфигах (AndroidManifest.xml / Info.plist).
-  //
-  // Проблема, специфичная для регистрации: signInWithOAuth не возвращает
-  // сессию сразу, а выбранная роль (_selectedRole) живёт только в этом
-  // виджете. Пока браузер делает редирект, виджет может быть пересоздан
-  // или (на некоторых платформах) процесс перезапущен — поэтому роль
-  // и введённое имя сохраняем в SharedPreferences и забираем их обратно
-  // в _completeGoogleSignUp(), когда придёт реальный signedIn.
   Future<void> _signUpWithGoogle() async {
     setState(() {
       _isGoogleLoading = true;
@@ -163,12 +161,19 @@ class _RegisterPageState extends State<RegisterPage>
     try {
       const webClientId =
           '700103731510-je08vr3c7k6g693pbb1kd9mrdlr5v179.apps.googleusercontent.com';
+      
+      // Настройка инициализации для Web и Mobile-платформ
       final googleSignIn = GoogleSignIn(
-        serverClientId: webClientId,
+        clientId: kIsWeb ? webClientId : null,         // Обязательно для Flutter Web
+        serverClientId: !kIsWeb ? webClientId : null, // Используется для мобильных ОС
         scopes: const ['email', 'profile'],
       );
+      
       final googleUser = await googleSignIn.signIn();
-      if (googleUser == null) return;
+      if (googleUser == null) {
+        if (mounted) setState(() => _isGoogleLoading = false);
+        return;
+      }
 
       final googleAuth = await googleUser.authentication;
       if (googleAuth.idToken == null) {
@@ -197,8 +202,6 @@ class _RegisterPageState extends State<RegisterPage>
   // ── ЗАВЕРШЕНИЕ РЕГИСТРАЦИИ ПОСЛЕ РЕАЛЬНОГО GOOGLE-РЕДИРЕКТА ─────────
   Future<void> _completeGoogleSignUp(User user) async {
     try {
-      // A Google account may be selected on the registration screen even if
-      // it was registered earlier.  Never overwrite its role or building.
       final existingProfile = await _supabase
           .from('profiles')
           .select('id')
@@ -237,10 +240,6 @@ class _RegisterPageState extends State<RegisterPage>
       final avatarUrl =
           metadata['avatar_url']?.toString() ?? metadata['picture']?.toString();
 
-      // handle_new_user() уже создал строку profiles с ролью по умолчанию
-      // при первом входе через Google — тем же UPDATE-then-upsert
-      // паттерном, что и в email-регистрации, перезаписываем её выбранной
-      // на форме ролью.
       final updated = await _supabase
           .from('profiles')
           .update({
@@ -443,7 +442,6 @@ class _RegisterPageState extends State<RegisterPage>
                                 fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 10),
-                          // Карточки в два ряда
                           Row(
                             children: [
                               Expanded(

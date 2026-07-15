@@ -160,9 +160,12 @@ class _MyWorkScreenState extends State<MyWorkScreen>
             elevation: 0,
             bottom: TabBar(
               controller: _tabController,
-              labelColor: Colors.blueAccent,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: Colors.blueAccent,
+// 1. Настройка вкладок (TabBar)[cite: 10]
+labelColor: Theme.of(context).colorScheme.primary,
+unselectedLabelColor: Theme.of(context).brightness == Brightness.dark 
+    ? Colors.white38 
+    : Colors.black38,
+indicatorColor: Theme.of(context).colorScheme.primary,
               tabs: [
                 Tab(text: lang == 'ru' ? 'В работе' : 'Жұмыста'),
                 Tab(text: lang == 'ru' ? 'Новые' : 'Жаңа'),
@@ -222,9 +225,10 @@ class _MyWorkScreenState extends State<MyWorkScreen>
           value: _totalIncome >= 1000
               ? '${(_totalIncome / 1000).toStringAsFixed(1)}к'
               : '${_totalIncome.toInt()}',
-          color: Colors.blueAccent,
-          icon: LucideIcons.wallet,
-          isDark: isDark,
+// 2. Параметры элемента / карточки[cite: 10]
+color: Theme.of(context).colorScheme.primary,
+icon: LucideIcons.wallet,
+isDark: isDark,
         ),
       ],
     );
@@ -291,7 +295,8 @@ class _MyWorkScreenState extends State<MyWorkScreen>
   Widget _buildOrderCard(OrderModel order, String lang, bool isDark) {
     final Color statusColor = order.isInProgress
         ? Colors.orange
-        : (order.isCompleted ? Colors.green : Colors.blueAccent);
+// 3. Условный цвет статуса заказа[cite: 10]
+: (order.isCompleted ? Colors.green : Theme.of(context).colorScheme.primary);
 
     return GestureDetector(
       onTap: () => _openDetails(order),

@@ -1,5 +1,6 @@
 import 'package:fixly_app/screens/chat_screen.dart';
 import 'package:fixly_app/screens/ai_chat_screen.dart';
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -132,7 +133,7 @@ Widget _buildChatTab(bool isDark) {
 
   Map<String, dynamic> _getStatusStyle(String status) {
     switch (status) {
-      case 'traveling': return {'icon': LucideIcons.truck, 'label': 'В ПУТИ', 'color': Colors.blueAccent, 'gradient': const LinearGradient(colors: [Color(0xFF64B5F6), Color(0xFF1976D2)])};
+      case 'traveling': return {'icon': LucideIcons.truck, 'label': 'В ПУТИ', 'color': AppColors.of(context).primary, 'gradient': const LinearGradient(colors: [Color(0xFF64B5F6), Color(0xFF1976D2)])};
       case 'working': return {'icon': LucideIcons.wrench, 'label': 'В РАБОТЕ', 'color': Colors.orangeAccent, 'gradient': const LinearGradient(colors: [Color(0xFFFFB74D), Color(0xFFF57C00)])};
       case 'completed': return {'icon': LucideIcons.checkCircle, 'label': 'ГОТОВО', 'color': Colors.greenAccent, 'gradient': const LinearGradient(colors: [Color(0xFF81C784), Color(0xFF388E3C)])};
       default: return {'icon': LucideIcons.messageCircle, 'label': 'НОВЫЙ', 'color': Colors.purpleAccent, 'gradient': const LinearGradient(colors: [Color(0xFFBA68C8), Color(0xFF7B1FA2)])};

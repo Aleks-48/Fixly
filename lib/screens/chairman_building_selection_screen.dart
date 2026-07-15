@@ -1,3 +1,4 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -134,8 +135,8 @@ class _ChairmanBuildingSelectionScreenState
             child: Text(AppTexts.get('cancel', lang)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
-            onPressed: () => Navigator.pop(ctx, true),
+style: ElevatedButton.styleFrom(backgroundColor: AppColors.of(ctx).primary),        
+    onPressed: () => Navigator.pop(ctx, true),
             child: Text(AppTexts.get('create', lang),
                 style: const TextStyle(color: Colors.white)),
           ),
@@ -256,7 +257,7 @@ class _ChairmanBuildingSelectionScreenState
                               color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blueAccent,
+                          backgroundColor: AppColors.of(context).primary,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14)),
                           elevation: 0,

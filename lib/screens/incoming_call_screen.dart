@@ -334,7 +334,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
               minHeight: 6,
               backgroundColor: Colors.white.withOpacity(0.12),
               valueColor: AlwaysStoppedAnimation<Color>(
-                remaining < 0.25 ? Colors.redAccent : Colors.blueAccent,
+                // Строка 337: Изменение цвета полосы таймера / прогресса[cite: 14]
+remaining < 0.25 ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary,
               ),
             ),
           );
@@ -353,7 +354,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
         border: Border.all(color: Colors.white.withOpacity(0.1), width: 4),
         boxShadow: [
           BoxShadow(
-            color: Colors.blueAccent.withOpacity(0.4),
+            // Строка 356: Цвет элемента с прозрачностью[cite: 14]
+color: Theme.of(context).colorScheme.primary.withOpacity(0.4),
             blurRadius: 40,
             spreadRadius: 10,
           )
@@ -375,11 +377,16 @@ class _IncomingCallScreenState extends State<IncomingCallScreen> with SingleTick
   /// Заглушка аватара
   Widget _buildFallbackAvatar() {
     return Container(
-      color: Colors.blueAccent.withOpacity(0.2),
+      // Строка 356: Цвет элемента с прозрачностью[cite: 14]
+color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
       child: Center(
         child: Text(
           widget.callerName.isNotEmpty ? widget.callerName[0].toUpperCase() : '?',
-          style: const TextStyle(fontSize: 56, color: Colors.blueAccent, fontWeight: FontWeight.bold),
+          style: TextStyle(
+  fontSize: 56, 
+  color: Theme.of(context).colorScheme.primary, 
+  fontWeight: FontWeight.bold,
+),
         ),
       ),
     );

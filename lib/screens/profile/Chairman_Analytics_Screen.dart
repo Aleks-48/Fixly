@@ -1,3 +1,5 @@
+// lib/screens/chairman_analytics_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart'; // Предполагается, что здесь лежит appLanguage
@@ -8,6 +10,7 @@ import 'package:fixly_app/services/building_context_service.dart';
 import 'package:printing/printing.dart'; 
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:fixly_app/theme/app_theme.dart'; // Подключение единой дизайн-системы Fixly
 
 class ChairmanAnalyticsScreen extends StatefulWidget {
   const ChairmanAnalyticsScreen({super.key});
@@ -20,12 +23,8 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   // --- 1. ФИНАНСОВЫЕ ПОКАЗАТЕЛИ ---
   double _eosiBalance = 2450000;      // Текущий счет (ЕОСИ)
   double _capitalBalance = 5800000;   // Кап. ремонт
-  String? _buildingId;                // ВАЖНО: используется для фильтрации
-                                       // tasks/votes по дому — без этого
-                                       // весь экран показывал финансы и
-                                       // архив голосований по ВСЕМ домам
-                                       // системы разом (см. комментарии ниже).
-  
+  String? _buildingId;                // Используется для фильтрации по дому
+
   final TextEditingController _balanceController = TextEditingController();
   final TextEditingController _capitalController = TextEditingController();
   final TextEditingController _manualStatController = TextEditingController();
@@ -41,19 +40,19 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       'trend': 0.18, 
       'label': 'Тарифы ЖКХ (РК)', 
       'info': 'Программа "Тариф в обмен на инвестиции"',
-      'color': Colors.redAccent
+      'colorKey': 'danger'
     },
     'materials': {
       'trend': 0.16, 
       'label': 'Стройматериалы', 
       'info': 'Учет планируемого НДС 16% в 2025 году',
-      'color': Colors.orangeAccent
+      'colorKey': 'warning'
     },
     'services': {
       'trend': 0.14, 
       'label': 'Сервисные услуги', 
       'info': 'Подорожание из-за роста МРП и налогов',
-      'color': Colors.blueAccent
+      'colorKey': 'primary'
     },
   };
 
@@ -87,11 +86,6 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     try {
       final supabase = Supabase.instance.client;
       
-      // Получаем историю последних выполненных задач
-      // ВАЖНО: раньше запрос не фильтровался по дому вообще — AI получал
-      // на вход "последние расходы" вообще всех домов в системе Fixly,
-      // и финансовый прогноз/рекомендации председателю формировались на
-      // основе чужих трат. Теперь ограничиваем текущим домом.
       var lastTasksQuery = supabase
           .from('tasks')
           .select()
@@ -160,43 +154,59 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   void _showManualStatDialog(String lang) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(lang == 'ru' ? "Факторы рынка РК" : "РК нарықтық факторлары"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              lang == 'ru' 
-                ? "Введите изменения (например: рост цен на лифты +20%)" 
-                : "Өзгерістерді енгізіңіз (мыс: лифт бағасы +20%)",
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _manualStatController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.grey.withOpacity(0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                hintText: lang == 'ru' ? "НДС 16%, инфляция..." : "ҚҚС 16%...",
+      builder: (dialogCtx) {
+        final c = AppColors.of(dialogCtx);
+        return AlertDialog(
+          backgroundColor: c.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text(
+            lang == 'ru' ? "Факторы рынка РК" : "РК нарықтық факторлары",
+            style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                lang == 'ru' 
+                  ? "Введите изменения (например: рост цен на лифты +20%)" 
+                  : "Өзгерістерді енгізіңіз (мыс: лифт бағасы +20%)",
+                style: TextStyle(fontSize: 14, color: c.textTertiary),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _manualStatController,
+                maxLines: 3,
+                style: TextStyle(color: c.textPrimary),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: c.surfaceVariant,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                  hintText: lang == 'ru' ? "НДС 16%, инфляция..." : "ҚҚС 16%...",
+                  hintStyle: TextStyle(color: c.textTertiary.withOpacity(0.6)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx), 
+              child: Text(lang == 'ru' ? "Закрыть" : "Жабу", style: TextStyle(color: c.textTertiary))
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(dialogCtx);
+                _fetchAiAnalysis(); 
+              }, 
+              style: ElevatedButton.styleFrom(
+                backgroundColor: c.primary,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+              ),
+              child: Text(lang == 'ru' ? "Обновить" : "Жаңарту", style: const TextStyle(color: Colors.white))
             ),
           ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(lang == 'ru' ? "Закрыть" : "Жабу")),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _fetchAiAnalysis(); 
-            }, 
-            style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text(lang == 'ru' ? "Обновить" : "Жаңарту")
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -206,44 +216,71 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Text(lang == 'ru' ? "Корректировка счетов" : "Шоттарды түзету"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildDialogField(_balanceController, lang == 'ru' ? "Счет ЕОСИ" : "ЕОСИ шоты"),
-            const SizedBox(height: 15),
-            _buildDialogField(_capitalController, lang == 'ru' ? "Фонд кап. ремонта" : "Күрделі жөндеу қоры"),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(lang == 'ru' ? "Отмена" : "Бас тарту")),
-          ElevatedButton(
-            onPressed: () {
-              setState(() {
-                _eosiBalance = double.tryParse(_balanceController.text) ?? _eosiBalance;
-                _capitalBalance = double.tryParse(_capitalController.text) ?? _capitalBalance;
-              });
-              Navigator.pop(context);
-              _fetchAiAnalysis();
-            },
-            style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text(lang == 'ru' ? "Сохранить" : "Сақтау"),
+      builder: (dialogCtx) {
+        final c = AppColors.of(dialogCtx);
+        return AlertDialog(
+          backgroundColor: c.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text(
+            lang == 'ru' ? "Корректировка счетов" : "Шоттарды түзету",
+            style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold),
           ),
-        ],
-      ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDialogField(dialogCtx, _balanceController, lang == 'ru' ? "Счет ЕОСИ" : "ЕОСИ шоты"),
+              const SizedBox(height: 15),
+              _buildDialogField(dialogCtx, _capitalController, lang == 'ru' ? "Фонд кап. ремонта" : "Күрделі жөндеу қоры"),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx), 
+              child: Text(lang == 'ru' ? "Отмена" : "Бас тарту", style: TextStyle(color: c.textTertiary))
+            ),
+            ElevatedButton(
+              onPressed: () {
+                setState(() {
+                  _eosiBalance = double.tryParse(_balanceController.text) ?? _eosiBalance;
+                  _capitalBalance = double.tryParse(_capitalController.text) ?? _capitalBalance;
+                });
+                Navigator.pop(dialogCtx);
+                _fetchAiAnalysis();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: c.primary,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+              ),
+              child: Text(lang == 'ru' ? "Сохранить" : "Сақтау", style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
     );
   }
 
-  Widget _buildDialogField(TextEditingController ctrl, String label) {
+  Widget _buildDialogField(BuildContext context, TextEditingController ctrl, String label) {
+    final c = AppColors.of(context);
     return TextField(
       controller: ctrl,
       keyboardType: TextInputType.number,
+      style: TextStyle(color: c.textPrimary, fontSize: 15),
       decoration: InputDecoration(
         labelText: label,
+        labelStyle: TextStyle(color: c.textTertiary),
         suffixText: "₸",
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        suffixStyle: TextStyle(color: c.textTertiary),
+        filled: true,
+        fillColor: c.surfaceVariant,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: c.textTertiary.withOpacity(0.2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: c.primary, width: 1.5),
+        ),
       ),
     );
   }
@@ -253,11 +290,6 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     setState(() => _isGeneratingPdf = true);
     try {
       final supabase = Supabase.instance.client;
-      // ВАЖНО: раньше запрос тянул ВСЕ голоса из таблицы votes без
-      // единого фильтра — "Лист голосования" в PDF содержал подписи и
-      // решения жителей вообще всех домов системы Fixly, а не только
-      // текущего. Фильтруем по building_id (эта колонка уже пишется в
-      // voting_service.dart при голосовании).
       List<Map<String, dynamic>> votes = [];
       if (_buildingId != null && _buildingId!.isNotEmpty) {
         votes = List<Map<String, dynamic>>.from(
@@ -337,7 +369,10 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
       await Printing.sharePdf(bytes: bytes, filename: 'voting_list.pdf');
 
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        final c = AppColors.of(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: c.danger));
+      }
     } finally {
       if (mounted) setState(() => _isGeneratingPdf = false);
     }
@@ -363,10 +398,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
         capitalBalance: _capitalBalance,
         totalSpent: spent,
         expenses: expenses,
-        address: "Ваш адрес", // Ideally fetched from context
+        address: "Ваш адрес", // Извлекается контекстно при генерации отчета
       );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        final c = AppColors.of(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: c.danger));
+      }
     } finally {
       if (mounted) setState(() => _isGeneratingPdf = false);
     }
@@ -375,26 +413,35 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
   // --- 6. ОСНОВНОЙ BUILD ---
   @override
   Widget build(BuildContext context) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = AppColors.of(context);
     final supabase = Supabase.instance.client;
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
       builder: (context, lang, child) {
         return Scaffold(
+          backgroundColor: c.background,
           appBar: AppBar(
-            title: Text(lang == 'ru' ? "Аналитика: Рынок РК" : "Аналитика: РК нарығы"),
+            backgroundColor: c.card,
+            elevation: 0,
+            title: Text(
+              lang == 'ru' ? "Аналитика: Рынок РК" : "Аналитика: РК нарығы",
+              style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold),
+            ),
+            iconTheme: IconThemeData(color: c.textPrimary),
             actions: [
-              IconButton(icon: const Icon(LucideIcons.barChart4), onPressed: () => _showManualStatDialog(lang)),
-              IconButton(icon: const Icon(LucideIcons.sparkles, color: Colors.blueAccent), onPressed: _fetchAiAnalysis)
+              IconButton(
+                icon: Icon(LucideIcons.barChart4, color: c.primary), 
+                onPressed: () => _showManualStatDialog(lang)
+              ),
+              IconButton(
+                icon: Icon(LucideIcons.sparkles, color: c.warning), 
+                onPressed: _fetchAiAnalysis
+              )
             ],
           ),
           body: Stack(
             children: [
-              // ВАЖНО: раньше стрим не фильтровался по дому — "Освоено",
-              // "Статус дома" и здоровье дома считались по ВСЕМ заявкам
-              // системы Fixly, а не только текущего дома. Председатель
-              // видел чужие суммы и чужую статистику завершённости.
               StreamBuilder<List<Map<String, dynamic>>>(
                 stream: _buildingId != null && _buildingId!.isNotEmpty
                     ? supabase
@@ -412,12 +459,14 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                               ? 'Дом не привязан к профилю — аналитика недоступна'
                               : 'Үй профильге тіркелмеген — аналитика қолжетімсіз',
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.grey),
+                          style: TextStyle(color: c.textTertiary, fontSize: 14),
                         ),
                       ),
                     );
                   }
-                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                  if (!snapshot.hasData) {
+                    return Center(child: CircularProgressIndicator(color: c.primary));
+                  }
 
                   final tasks = snapshot.data!;
                   double spent = 0;
@@ -440,28 +489,71 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildFinancialOverview(_eosiBalance, _capitalBalance, spent, lang),
+                        _StaggeredEntrance(
+                          index: 0,
+                          child: _buildFinancialOverview(context, _eosiBalance, _capitalBalance, spent, lang),
+                        ),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(lang == 'ru' ? "AI Прогноз" : "AI болжамы"),
-                        _buildAIAdviceCard(_aiForecastText, _isAiLoading, lang, isDark),
+                        
+                        _StaggeredEntrance(
+                          index: 1,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSectionHeader(context, lang == 'ru' ? "AI Прогноз" : "AI болжамы"),
+                              _buildAIAdviceCard(context, _aiForecastText, _isAiLoading, lang),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(lang == 'ru' ? "Критические задачи" : "Маңызды міндеттер"),
-                        _buildAiTasksList(_aiPriorityTasks),
+                        
+                        _StaggeredEntrance(
+                          index: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSectionHeader(context, lang == 'ru' ? "Критические задачи" : "Маңызды міндеттер"),
+                              _buildAiTasksList(context, _aiPriorityTasks),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(lang == 'ru' ? "Цены в РК (НДС 16%)" : "РК бағалары (ҚҚС 16%)"),
-                        _buildMarketComparison(isDark),
+                        
+                        _StaggeredEntrance(
+                          index: 3,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSectionHeader(context, lang == 'ru' ? "Цены в РК (НДС 16%)" : "РК бағалары (ҚҚС 16%)"),
+                              _buildMarketComparison(context),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 25),
-                        _buildSectionHeader(lang == 'ru' ? "Статус дома" : "Үйдің күйі"),
-                        _buildHealthIndicator(health, active, lang),
+                        
+                        _StaggeredEntrance(
+                          index: 4,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSectionHeader(context, lang == 'ru' ? "Статус дома" : "Үйдің күйі"),
+                              _buildHealthIndicator(context, health, active, lang),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 30),
-                        _buildReportButtons(lang, spent),
+                        
+                        _StaggeredEntrance(
+                          index: 5,
+                          child: _buildReportButtons(context, lang, spent),
+                        ),
                         const SizedBox(height: 50),
                       ],
                     ),
                   );
                 },
               ),
-              if (_isGeneratingPdf) _buildOverlayLoader(lang == 'ru' ? "Создание PDF..." : "PDF жасалуда..."),
+              if (_isGeneratingPdf) _buildOverlayLoader(context, lang == 'ru' ? "Создание PDF..." : "PDF жасалуда..."),
             ],
           ),
         );
@@ -471,31 +563,53 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
 
   // --- 7. КОМПОНЕНТЫ ИНТЕРФЕЙСА ---
 
-  Widget _buildFinancialOverview(double bal, double cap, double spent, String lang) {
+  Widget _buildFinancialOverview(BuildContext context, double bal, double cap, double spent, String lang) {
+    final c = AppColors.of(context);
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Color(0xFF0F172A), Color(0xFF1E293B)]),
+        gradient: LinearGradient(
+          colors: [
+            c.primary,
+            c.primary.withOpacity(0.85),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: c.primary.withOpacity(0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          )
+        ],
       ),
       child: Column(
         children: [
           GestureDetector(
             onTap: () => _showEditBalanceDialog(lang),
+            behavior: HitTestBehavior.opaque,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _miniBalance(lang == 'ru' ? "ОСИ СЧЕТ" : "ОСИ ШОТЫ", bal, Colors.cyanAccent),
-                _miniBalance(lang == 'ru' ? "КАП. РЕМОНТ" : "КҮРДЕЛІ ЖӨНДЕУ", cap, Colors.orangeAccent),
+                _miniBalance(context, lang == 'ru' ? "ОСИ СЧЕТ" : "ОСИ ШОТЫ", bal, Colors.cyanAccent),
+                _miniBalance(context, lang == 'ru' ? "КАП. РЕМОНТ" : "КҮРДЕЛІ ЖӨНДЕУ", cap, Colors.orangeAccent),
               ],
             ),
           ),
-          const Divider(color: Colors.white10, height: 40),
+          Divider(color: Colors.white.withOpacity(0.15), height: 40),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ", style: const TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
-              Text("${spent.toInt()} ₸", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)),
+              Text(
+                lang == 'ru' ? "ОСВОЕНО" : "ИГЕРІЛДІ", 
+                style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 13, fontWeight: FontWeight.bold)
+              ),
+              Text(
+                "${spent.toInt()} ₸", 
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22)
+              ),
             ],
           )
         ],
@@ -503,64 +617,121 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _miniBalance(String label, double val, Color col) {
+  Widget _miniBalance(BuildContext context, String label, double val, Color col) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: Colors.white38, fontSize: 13, fontWeight: FontWeight.bold)),
-        Text("${val.toInt()} ₸", style: TextStyle(color: col, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(
+          label, 
+          style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)
+        ),
+        const SizedBox(height: 4),
+        Text(
+          "${val.toInt()} ₸", 
+          style: TextStyle(color: col, fontSize: 18, fontWeight: FontWeight.bold)
+        ),
       ],
     );
   }
 
-  Widget _buildAIAdviceCard(String text, bool loading, String lang, bool isDark) {
+  Widget _buildAIAdviceCard(BuildContext context, String text, bool loading, String lang) {
+    final c = AppColors.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(isDark ? 0.1 : 0.05),
+        color: c.primary.withOpacity(0.06),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+        border: Border.all(color: c.primary.withOpacity(0.15)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(LucideIcons.sparkles, color: Colors.blueAccent, size: 16),
+              Icon(LucideIcons.sparkles, color: c.primary, size: 16),
               const SizedBox(width: 8),
-              Text("AI ANALYTICS", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.blueAccent.withOpacity(0.7))),
+              Text(
+                "AI ANALYTICS", 
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: c.primary.withOpacity(0.75))
+              ),
             ],
           ),
           const SizedBox(height: 10),
-          if (loading) const LinearProgressIndicator(minHeight: 2),
-          if (!loading) Text(
-            text.isEmpty ? (lang == 'ru' ? "Нажмите иконку искр для анализа" : "Талдау үшін ұшқын белгішесін басыңыз") : text,
-            style: TextStyle(fontSize: 13, height: 1.5, color: isDark ? Colors.white70 : Colors.black87),
-          ),
+          if (loading) 
+            LinearProgressIndicator(
+              minHeight: 2, 
+              color: c.primary, 
+              backgroundColor: c.primary.withOpacity(0.1),
+            ),
+          if (!loading) 
+            Text(
+              text.isEmpty ? (lang == 'ru' ? "Нажмите иконку искр для анализа" : "Талдау үшін ұшқын белгішесін басыңыз") : text,
+              style: TextStyle(fontSize: 13, height: 1.5, color: c.textPrimary),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildAiTasksList(List<Map<String, dynamic>> tasks) {
+  Widget _buildAiTasksList(BuildContext context, List<Map<String, dynamic>> tasks) {
+    final c = AppColors.of(context);
     return Column(
-      children: tasks.map((t) => Card(
-        margin: const EdgeInsets.only(bottom: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ListTile(
-          leading: Icon(t['icon'] as IconData, color: t['importance'] == 'Critical' ? Colors.red : Colors.orange),
-          title: Text(t['title'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-          trailing: Text(t['cost'], style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent)),
-        ),
-      )).toList(),
+      children: tasks.map((t) {
+        final bool isCritical = t['importance'] == 'Critical';
+        final highlightColor = isCritical ? c.danger : c.warning;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 10),
+          color: c.card,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: c.textTertiary.withOpacity(0.15)),
+          ),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: highlightColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                t['icon'] as IconData, 
+                color: highlightColor,
+                size: 20,
+              ),
+            ),
+            title: Text(
+              t['title'], 
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: c.textPrimary)
+            ),
+            trailing: Text(
+              t['cost'], 
+              style: TextStyle(fontWeight: FontWeight.bold, color: c.primary, fontSize: 14)
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
-  Widget _buildMarketComparison(bool isDark) {
+  Color _getMarketColor(BuildContext context, String key) {
+    final c = AppColors.of(context);
+    switch (key) {
+      case 'danger': return c.danger;
+      case 'warning': return c.warning;
+      case 'primary': return c.primary;
+      default: return c.primary;
+    }
+  }
+
+  Widget _buildMarketComparison(BuildContext context) {
+    final c = AppColors.of(context);
     return Column(
       children: _marketStats.entries.map((e) {
         final trend = e.value['trend'] as double;
+        final color = _getMarketColor(context, e.value['colorKey']);
         return Padding(
           padding: const EdgeInsets.only(bottom: 15),
           child: Column(
@@ -569,12 +740,24 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(e.value['label'], style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                  Text("+${(trend * 100).toInt()}%", style: TextStyle(color: e.value['color'], fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text(
+                    e.value['label'], 
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.textPrimary)
+                  ),
+                  Text(
+                    "+${(trend * 100).toInt()}%", 
+                    style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
-              LinearProgressIndicator(value: trend * 2, color: e.value['color'], backgroundColor: e.value['color'].withOpacity(0.1), minHeight: 6),
+              LinearProgressIndicator(
+                value: trend * 2, 
+                color: color, 
+                backgroundColor: color.withOpacity(0.1), 
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(3),
+              ),
             ],
           ),
         );
@@ -582,22 +765,34 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildHealthIndicator(double health, int active, String lang) {
-    Color col = health > 0.7 ? Colors.green : Colors.orange;
+  Widget _buildHealthIndicator(BuildContext context, double health, int active, String lang) {
+    final c = AppColors.of(context);
+    Color col = health > 0.7 ? c.success : c.warning;
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), border: Border.all(color: col.withOpacity(0.2))),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(24), 
+        border: Border.all(color: col.withOpacity(0.25))
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text("${(health * 100).toInt()}%", style: TextStyle(color: col, fontSize: 32, fontWeight: FontWeight.w900)),
-          Text(lang == 'ru' ? "Активно: $active" : "Белсенді: $active", style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            "${(health * 100).toInt()}%", 
+            style: TextStyle(color: col, fontSize: 32, fontWeight: FontWeight.w900)
+          ),
+          Text(
+            lang == 'ru' ? "Активно: $active" : "Белсенді: $active", 
+            style: TextStyle(fontWeight: FontWeight.bold, color: c.textPrimary)
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildReportButtons(String lang, double spent) {
+  Widget _buildReportButtons(BuildContext context, String lang, double spent) {
+    final c = AppColors.of(context);
     return Column(
       children: [
         SizedBox(
@@ -606,8 +801,15 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           child: ElevatedButton.icon(
             onPressed: _isGeneratingPdf ? null : () => _handlePdfGeneration(lang),
             icon: const Icon(LucideIcons.fileDown, color: Colors.white),
-            label: Text(lang == 'ru' ? "СКАЧАТЬ ЛИСТ ГОЛОСОВАНИЯ" : "ДАУЫС БЕРУ ПАРАҒЫН ЖҮКТЕУ"),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+            label: Text(
+              lang == 'ru' ? "СКАЧАТЬ ЛИСТ ГОЛОСОВАНИЯ" : "ДАУЫС БЕРУ ПАРАҒЫН ЖҮКТЕУ",
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.primary, 
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              elevation: 0,
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -616,13 +818,13 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
           height: 56,
           child: OutlinedButton.icon(
             onPressed: _isGeneratingPdf ? null : () => _handleFinancialPdfGeneration(lang, spent),
-            icon: const Icon(LucideIcons.fileText, color: Colors.blueAccent),
+            icon: Icon(LucideIcons.fileText, color: c.primary),
             label: Text(
               lang == 'ru' ? "ВЫГРУЗИТЬ ФИН. ОТЧЕТ" : "ҚАРЖЫЛЫҚ ЕСЕПТІ ЖҮКТЕУ",
-              style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)
+              style: TextStyle(color: c.primary, fontWeight: FontWeight.bold, fontSize: 14)
             ),
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Colors.blueAccent, width: 2),
+              side: BorderSide(color: c.primary, width: 2),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))
             ),
           ),
@@ -631,22 +833,84 @@ class _ChairmanAnalyticsScreenState extends State<ChairmanAnalyticsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Text(title.toUpperCase(), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 1)),
-  );
-
-  Widget _buildOverlayLoader(String text) => Container(
-    color: Colors.black87,
-    child: Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(color: Colors.blueAccent),
-          const SizedBox(height: 20),
-          Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        ],
+  Widget _buildSectionHeader(BuildContext context, String title) {
+    final c = AppColors.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        title.toUpperCase(), 
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: c.textTertiary, letterSpacing: 1)
       ),
-    ),
+    );
+  }
+
+  Widget _buildOverlayLoader(BuildContext context, String text) {
+    final c = AppColors.of(context);
+    return Container(
+      color: c.background.withOpacity(0.85),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: c.primary),
+            const SizedBox(height: 20),
+            Text(
+              text, 
+              style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.bold)
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+//  _StaggeredEntrance — каскадная анимация элементов дашборда
+// ============================================================
+class _StaggeredEntrance extends StatefulWidget {
+  const _StaggeredEntrance({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StaggeredEntrance> createState() => _StaggeredEntranceState();
+}
+
+class _StaggeredEntranceState extends State<_StaggeredEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
   );
+  late final Animation<double> _fade =
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, 0.08),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+  @override
+  void initState() {
+    super.initState();
+    final delayMs = (widget.index * 45).clamp(0, 400);
+    Future.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
+  }
 }

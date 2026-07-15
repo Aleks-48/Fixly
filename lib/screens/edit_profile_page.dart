@@ -1,3 +1,4 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:fixly_app/main.dart';
@@ -180,7 +181,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
           style: const TextStyle(fontSize: 16),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: Colors.blueAccent),
+            prefixIcon: Icon(icon, color: AppColors.of(context).primary),
             counterText: "", // Скрываем стандартный счетчик символов
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
@@ -192,7 +193,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.blueAccent, width: 2),
+              borderSide: BorderSide(color: AppColors.of(context).primary, width: 2),
             ),
             filled: true,
             fillColor: Colors.white,

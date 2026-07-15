@@ -1,10 +1,10 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/models/user_model.dart';
 import 'package:fixly_app/screens/master_Detail_Page.dart';
-import 'package:fixly_app/widgets/app_shimmer.dart';
 
 class MastersListScreen extends StatefulWidget {
   const MastersListScreen({super.key});
@@ -276,10 +276,10 @@ class _MastersListScreenState extends State<MastersListScreen>
                           _load(reset: true);
                         },
                         backgroundColor: isDark ? const Color(0xFF1A1A1C) : Colors.white,
-                        selectedColor: Colors.blueAccent,
+selectedColor: Theme.of(context).colorScheme.primary,
                         checkmarkColor: Colors.white,
                         side: BorderSide(
-                          color: isSelected ? Colors.blueAccent : Colors.grey.withOpacity(0.3),
+                          color: isSelected ? Theme.of(context).colorScheme.primary : Colors.grey.withOpacity(0.3),
                         ),
                       ),
                     );
@@ -352,13 +352,17 @@ class _MastersListScreenState extends State<MastersListScreen>
               children: [
                 CircleAvatar(
                   radius: 30,
-                  backgroundColor: Colors.blueAccent.withOpacity(0.15),
+                 // 2. Аватар мастера (CircleAvatar)
+                  backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
                   backgroundImage: (master.avatarUrl != null && master.avatarUrl!.isNotEmpty)
                       ? NetworkImage(master.avatarUrl!)
                       : null,
                   child: (master.avatarUrl == null || master.avatarUrl!.isEmpty)
                       ? Text(master.initials,
-                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueAccent, fontSize: 16))
+                          style: TextStyle( // Убран const
+                              fontWeight: FontWeight.bold, 
+                              color: Theme.of(context).colorScheme.primary, 
+                              fontSize: 16))
                       : null,
                 ),
                 if (master.isAvailable)
@@ -393,7 +397,8 @@ class _MastersListScreenState extends State<MastersListScreen>
                         ),
                       ),
                       if (master.isVerified)
-                        const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
+// 3. Иконка верификации (убран const)
+                        Icon(Icons.verified, color: Theme.of(context).colorScheme.primary, size: 16),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -411,7 +416,10 @@ class _MastersListScreenState extends State<MastersListScreen>
                       if (master.priceFrom != null) ...[
                         const SizedBox(width: 10),
                         Text('${lang == 'ru' ? 'от' : 'бастап'} ${master.priceFrom!.toInt()} ₸',
-                            style: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+                            style: TextStyle( // Убран const
+                                fontSize: 14, 
+                                color: Theme.of(context).colorScheme.primary, 
+                                fontWeight: FontWeight.w600)),
                       ],
                     ],
                   ),

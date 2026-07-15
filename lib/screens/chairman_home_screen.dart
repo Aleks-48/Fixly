@@ -1,3 +1,4 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -191,11 +192,11 @@ class _ChairmanHomeScreenState extends State<ChairmanHomeScreen> {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.blueAccent.withOpacity(0.12),
+                color: AppColors.of(context).primary.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
               ),
               child:
-                  const Icon(LucideIcons.building2, color: Colors.blueAccent),
+                  Icon(LucideIcons.building2, color: AppColors.of(context).primary),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -234,8 +235,8 @@ class _ChairmanHomeScreenState extends State<ChairmanHomeScreen> {
           ),
           child: Row(
             children: [
-              const Icon(LucideIcons.mapPin,
-                  color: Colors.blueAccent, size: 18),
+              Icon(LucideIcons.mapPin,
+                  color: AppColors.of(context).primary, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -263,7 +264,7 @@ Widget _buildKpiGrid(Color card, bool isDark) {
     mainAxisSpacing: 8,
     children: [
       _kpi('Заявки', '$_activeTasks', LucideIcons.clipboardList,
-          Colors.blueAccent, card, isDark),
+          AppColors.of(context).primary, card, isDark),
       _kpi('Критично', '$_criticalTasks', LucideIcons.alertTriangle,
           Colors.redAccent, card, isDark),
       
@@ -330,7 +331,7 @@ Widget _buildQuickActions(Color card, bool isDark) {
     _QuickAction(
         'Заявка',
         LucideIcons.wrench,
-        Colors.blueAccent,
+        AppColors.of(context).primary,
         () => Navigator.push(context,
             MaterialPageRoute(builder: (_) => const CreateOrderPage()))),
     _QuickAction(
@@ -476,7 +477,7 @@ Widget _buildQuickActions(Color card, bool isDark) {
 
   Widget _sectionTitle(String title, IconData icon) => Row(
         children: [
-          Icon(icon, size: 16, color: Colors.blueAccent),
+          Icon(icon, size: 16, color: AppColors.of(context).primary),
           const SizedBox(width: 8),
           Text(
             title,

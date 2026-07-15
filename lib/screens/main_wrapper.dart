@@ -153,7 +153,7 @@ class _MainWrapperState extends State<MainWrapper> {
                   icon: LucideIcons.wrench,
                   title:
                       appLanguage.value == 'ru' ? "Заявка (Service)" : "Өтінім",
-                  color: Colors.blueAccent,
+                  color: Theme.of(context).colorScheme.primary,
                   isDark: isDark,
                   onTap: () {
                     Navigator.pop(context);
@@ -516,7 +516,7 @@ class _MainWrapperState extends State<MainWrapper> {
             backgroundColor: isDark ? const Color(0xFF1A1A1A) : Colors.white,
             elevation: 0,
             leading: IconButton(
-              icon: const Icon(LucideIcons.menu, color: Colors.blueAccent),
+              icon: Icon(LucideIcons.menu, color: Theme.of(context).colorScheme.primary),
               onPressed: () => _scaffoldKey.currentState?.openDrawer(),
             ),
             title: Text(_userRole == 'chairman' ? "Fixly ОСИ" : "Fixly",
@@ -547,7 +547,7 @@ class _MainWrapperState extends State<MainWrapper> {
                           ElevatedButton(
                             onPressed: _nextTutorialStep,
                             style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blueAccent),
+                                backgroundColor: Theme.of(context).colorScheme.primary),
                             child: Text(cleanLang == 'kk' ? 'Келесі' : 'Далее',
                                 style: const TextStyle(color: Colors.white)),
                           )
@@ -565,17 +565,17 @@ class _MainWrapperState extends State<MainWrapper> {
                   _userRole == 'resident')
               ? FloatingActionButton(
                   onPressed: _onPlusButtonPressed,
-                  backgroundColor: Colors.blueAccent,
-                  shape: const CircleBorder(),
-                  child: const Icon(Icons.add, color: Colors.white, size: 28),
-                )
-              : null,
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.centerDocked,
-        );
-      },
-    );
-  }
+backgroundColor: Theme.of(context).colorScheme.primary,
+                shape: const CircleBorder(),
+                child: const Icon(Icons.add, color: Colors.white, size: 28),
+              )
+            : null,
+        floatingActionButtonLocation:
+            FloatingActionButtonLocation.centerDocked,
+      );
+    },
+  );
+}
 
   Widget _buildDrawer(String lang, bool isDark) {
     return Drawer(
@@ -583,14 +583,14 @@ class _MainWrapperState extends State<MainWrapper> {
       child: Column(
         children: [
           UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(color: Colors.blueAccent),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
             accountName: Text(_userRole.toUpperCase(),
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             accountEmail:
                 Text(Supabase.instance.client.auth.currentUser?.email ?? ""),
-            currentAccountPicture: const CircleAvatar(
+            currentAccountPicture: CircleAvatar(
               backgroundColor: Colors.white,
-              child: Icon(LucideIcons.user, color: Colors.blueAccent, size: 40),
+              child: Icon(LucideIcons.user, color: Theme.of(context).colorScheme.primary, size: 40),
             ),
           ),
           ListTile(
@@ -619,7 +619,7 @@ class _MainWrapperState extends State<MainWrapper> {
             ),
           if (_userRole == 'chairman') ...[
             ListTile(
-              leading: const Icon(LucideIcons.fileText, color: Colors.blue),
+              leading: Icon(LucideIcons.fileText, color: Theme.of(context).colorScheme.primary),
               title: Text(lang == 'kk' ? "Құжаттар" : "Документы"),
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (c) => const DocumentsScreen())),
@@ -712,7 +712,10 @@ class _MainWrapperState extends State<MainWrapper> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon,
-                color: isSelected ? Colors.blueAccent : Colors.grey, size: 24),
+color: isSelected 
+                    ? Theme.of(context).colorScheme.primary 
+                    : (Theme.of(context).brightness == Brightness.dark ? Colors.white38 : Colors.black38), 
+                size: 24),
             const SizedBox(height: 4),
             FittedBox(
               fit: BoxFit.scaleDown,
@@ -721,7 +724,9 @@ class _MainWrapperState extends State<MainWrapper> {
                 maxLines: 1,
                 style: TextStyle(
                     fontSize: 11,
-                    color: isSelected ? Colors.blueAccent : Colors.grey),
+                    color: isSelected 
+                        ? Theme.of(context).colorScheme.primary 
+                        : (Theme.of(context).brightness == Brightness.dark ? Colors.white38 : Colors.black38)),
               ),
             ),
           ],
@@ -746,7 +751,7 @@ class _MainWrapperState extends State<MainWrapper> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.help_outline, color: Colors.blueAccent),
+              leading: Icon(Icons.help_outline, color: Theme.of(context).colorScheme.primary),
               title: Text(AppTexts.get('instruction', cleanLang)),
               onTap: () {
                 Navigator.pop(context);

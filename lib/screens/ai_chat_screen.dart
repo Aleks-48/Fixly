@@ -89,7 +89,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(width: 30, height: 30, decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(8)), child: const Center(child: Text("F", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
+            Container(width: 30, height: 30, decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, borderRadius: BorderRadius.circular(8)), child: const Center(child: Text("F", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
             const SizedBox(width: 10),
             Column(
               mainAxisSize: MainAxisSize.min,

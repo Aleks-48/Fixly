@@ -32,6 +32,14 @@ class _OrdersPageState extends State<OrdersPage>
   late TabController _tabCtrl;
 
   static const _statusTabs = ['all', 'new', 'in_progress', 'completed'];
+  
+  Color? get _sageColor => null;
+  
+  Color? get _sandDark => null;
+  
+  Null get _oliveGreen => null;
+  
+  Null get _terracotta => null;
 
   @override
   void initState() {
@@ -138,9 +146,11 @@ class _OrdersPageState extends State<OrdersPage>
             iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
             bottom: TabBar(
               controller: _tabCtrl,
-              labelColor: Colors.blueAccent,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: Colors.blueAccent,
+labelColor: Theme.of(context).colorScheme.primary,
+              unselectedLabelColor: Theme.of(context).brightness == Brightness.dark 
+                  ? Colors.white38 
+                  : Colors.black38,
+              indicatorColor: Theme.of(context).colorScheme.primary,
               isScrollable: false,
               tabs: [
                 Tab(text: lang == 'ru' ? 'Все' : 'Барлығы'),
@@ -260,7 +270,7 @@ class _OrdersPageState extends State<OrdersPage>
                   ),
                 ),
                 const SizedBox(width: 8),
-                _statusBadge(statusLabel, statusColor),
+                _statusBadge(statusLabel, statusColor!),
               ],
             ),
             const SizedBox(height: 6),
@@ -326,9 +336,9 @@ class _OrdersPageState extends State<OrdersPage>
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
-                    color: status == 'completed'
-                        ? Colors.green
-                        : Colors.blueAccent,
+color: status == 'completed' 
+              ? c.success // Мягкий лесной зеленый
+              : c.info,   // Успокоенный бирюзово-шалфейный вместо синего
                   ),
                 ),
               ],
@@ -361,15 +371,15 @@ class _OrdersPageState extends State<OrdersPage>
         decoration: BoxDecoration(color: c, shape: BoxShape.circle));
   }
 
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'new'         : return Colors.blueAccent;
-      case 'in_progress' : return Colors.orange;
-      case 'completed'   : return Colors.green;
-      case 'cancelled'   : return Colors.red;
-      default            : return Colors.grey;
-    }
+Color? _statusColor(String s) {
+  switch (s) {
+    case 'new'         : return _sageColor;   // Шалфейный
+    case 'in_progress' : return _sandDark;    // Контрастный песочный
+    case 'completed'   : return _oliveGreen;  // Оливковый зеленый
+    case 'cancelled'   : return _terracotta;  // Приглушенный терракотовый
+    default            : return Colors.grey;
   }
+}
 
   String _statusLabel(String s, String lang) {
     final ru = {'new':'Новая','in_progress':'В работе','completed':'Готово','cancelled':'Отменено'};
@@ -400,4 +410,16 @@ class _OrdersPageState extends State<OrdersPage>
           ],
         ),
       );
+}
+
+class c {
+  static get success => null;
+  
+  static get info => null;
+
+  static Color? get primary => null;
+
+  static Color? get textTertiary => null;
+
+  static Color? get warning => null;
 }

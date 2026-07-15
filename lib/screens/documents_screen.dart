@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
@@ -929,21 +930,21 @@ Future<void> _generateAndOpenDocument(
                 margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.blueAccent.withOpacity(0.1),
+                  color: AppColors.of(context).primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+                  border: Border.all(color: AppColors.of(context).primary.withOpacity(0.3)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(LucideIcons.shield, color: Colors.blueAccent, size: 16),
+                    Icon(LucideIcons.shield, color: AppColors.of(context).primary, size: 16),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         lang == 'ru'
                             ? "Раздел председателя ОСИ • Документы по законодательству РК"
                             : "МҮБ төрағасының бөлімі • ҚР заңнамасы бойынша құжаттар",
-                        style: const TextStyle(
-                          color: Colors.blueAccent,
+                        style: TextStyle(
+                          color: AppColors.of(context).primary,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -987,7 +988,7 @@ Future<void> _generateAndOpenDocument(
               label: Text(lang == 'ru' ? cat['name_ru']! : cat['name_kk']!),
               selected: isSelected,
               onSelected: (_) => setState(() => _selectedCategoryId = cat['id']!),
-              selectedColor: Colors.blueAccent,
+              selectedColor: AppColors.of(context).primary,
               labelStyle: TextStyle(
                 color: isSelected ? Colors.white : null,
                 fontWeight: isSelected ? FontWeight.bold : null,
@@ -1167,7 +1168,7 @@ Future<void> _generateAndOpenDocument(
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
+                  backgroundColor: AppColors.of(context).primary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   elevation: 0,
                 ),
@@ -1186,7 +1187,7 @@ Future<void> _generateAndOpenDocument(
 
   Color _getDocColor(String id) {
     switch (id) {
-      case 'p1': return Colors.blueAccent;
+      case 'p1': return AppColors.of(context).primary;
       case 'l1': return Colors.purple;
       case 'a1': return Colors.orange;
       case 'd1': return Colors.redAccent;

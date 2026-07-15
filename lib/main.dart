@@ -18,25 +18,21 @@ import 'firebase_options.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-// Глобальные нотификаторы для быстрого доступа из любой точки приложения
 final ValueNotifier<String> appLanguage = ValueNotifier<String>('ru');
-final ValueNotifier<String> userRole = ValueNotifier<String>('resident'); // По умолчанию житель
+final ValueNotifier<String> userRole = ValueNotifier<String>('resident'); 
 final ValueNotifier<double> userRating = ValueNotifier<double>(0.0);
 
-/// Функция для смены языка с сохранением в память устройства (SharedPreferences)
 Future<void> changeLanguage(String newLang) async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.setString('saved_lang', newLang);
   appLanguage.value = newLang;
 }
 
-/// Обработчик фоновых уведомлений Firebase
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 }
 
-/// Сохранение токена уведомлений в Supabase для конкретного пользователя
 Future<void> saveTokenToSupabase() async {
   final supabase = Supabase.instance.client;
   final user = supabase.auth.currentUser;
@@ -61,7 +57,6 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
   
-  // Инициализация сервисов
   await Future.wait([
     Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
     SharedPreferences.getInstance().then((prefs) {
@@ -70,16 +65,11 @@ void main() async {
         appLanguage.value = savedLang;
       }
     }),
-    // ВАЖНО: без этого announcements_screen.dart падал с LocaleDataException
-    // при каждом открытии деталей объявления — там используется
-    // DateFormat('dd MMMM yyyy, HH:mm', 'ru') с явной русской локалью,
-    // а данные локали intl нигде не инициализировались.
     initializeDateFormatting('ru'),
   ]);
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   
-  // Конфигурация Supabase
   await Supabase.initialize(
     url: 'https://wqxzraqzonyxnsrlysyt.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndxeHpyYXF6b255eG5zcmx5c3l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4MzM5ODAsImV4cCI6MjA4NTQwOTk4MH0.ZhrKi9Ko1dJzyDGzpzVN53EKd1XC7mdyWUcHJl_qHu4',
@@ -104,14 +94,6 @@ class MyApp extends StatelessWidget {
       title: 'Fixly',
       debugShowCheckedModeBanner: false,
       themeMode: themeNotifier.themeMode,
-      // ВАЖНО: раньше здесь была generic inline ThemeData
-      // (colorSchemeSeed: Colors.blue), а вся дизайн-система из
-      // theme/app_theme.dart (AppColors, кастомные InputDecorationTheme,
-      // BottomNavigationBarTheme, ElevatedButtonTheme и т.д. — тёмная
-      // навигационная палитра #0A0D1A/#141B2D/#2196F3) никогда не
-      // подключалась к MaterialApp и просто не работала нигде в
-      // приложении, кроме мест, где AppColors.of(context) вызывался
-      // напрямую в обход системы тем Flutter.
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       initialRoute: '/',
@@ -131,10 +113,6 @@ class MyApp extends StatelessWidget {
             page = const MastersListScreen();
             break;
           default:
-            // Раньше здесь сразу был AuthGate — красивый анимированный
-            // SplashScreen существовал в проекте, но никогда не
-            // показывался пользователю. Теперь он играет роль первого
-            // экрана и сам передаёт эстафету AuthGate по завершении.
             page = const SplashScreen();
         }
         return MaterialPageRoute(
@@ -146,12 +124,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-/// Виджет проверки авторизации (Gate)
-/// Решает, показать экран логина или главный экран приложения
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
-  // Функция для обновления глобальной роли пользователя при входе
   Future<void> _updateGlobalUserRole(String userId) async {
     try {
       final data = await Supabase.instance.client
@@ -173,25 +148,20 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<AuthState>(
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
-        // Состояние загрузки
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
+          return Scaffold(
+            // СИСТЕМНЫЙ СИНИЙ УБРАН: теперь индикатор подстраивается под тему (шалфей)
+            body: Center(child: CircularProgressIndicator(color: AppColors.of(context).primary)),
           );
         }
         
         final session = snapshot.data?.session;
         
         if (session != null) {
-          // Если сессия есть:
-          // 1. Сохраняем токен для пушей
           Future.microtask(() => saveTokenToSupabase());
-          // 2. Обновляем роль, чтобы MainWrapper сразу знал, что рисовать
           _updateGlobalUserRole(session.user.id);
-          
           return const MainWrapper();
         } else {
-          // Если сессии нет — на страницу входа
           return const LoginPage();
         }
       },

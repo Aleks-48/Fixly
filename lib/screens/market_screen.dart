@@ -313,16 +313,17 @@ class _MarketScreenState extends State<MarketScreen> {
               children: [
                 CircleAvatar(
                   radius: 28,
-                  backgroundColor: Colors.blueAccent.withOpacity(0.15),
-                  backgroundImage: (m.avatarUrl?.isNotEmpty == true)
-                      ? NetworkImage(m.avatarUrl!) : null,
-                  child: (m.avatarUrl?.isEmpty ?? true)
-                      ? Text(m.initials,
-                          style: const TextStyle(
-                              color: Colors.blueAccent,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15))
-                      : null,
+// Блок аватара (CircleAvatar):
+backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+backgroundImage: (m.avatarUrl?.isNotEmpty == true)
+    ? NetworkImage(m.avatarUrl!) : null,
+child: (m.avatarUrl?.isEmpty ?? true)
+    ? Text(m.initials,
+        style: TextStyle( // Убран const, так как цвет теперь динамический
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: 15))
+    : null,
                 ),
                 if (m.isAvailable)
                   Positioned(
@@ -357,8 +358,9 @@ class _MarketScreenState extends State<MarketScreen> {
                             overflow: TextOverflow.ellipsis),
                       ),
                       if (m.isVerified)
-                        const Icon(Icons.verified,
-                            color: Colors.blueAccent, size: 15),
+                        Icon(Icons.verified,
+                            // Иконка или элемент:
+color: Theme.of(context).colorScheme.primary, size: 15),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -373,15 +375,16 @@ class _MarketScreenState extends State<MarketScreen> {
                       Text(' (${m.reviewsCount})',
                           style: const TextStyle(
                               fontSize: 14, color: Colors.grey)),
-                      if (m.priceFrom != null) ...[
-                        const SizedBox(width: 10),
-                        Text(
-                          '${lang == 'ru' ? 'от' : 'бастап'} ${m.priceFrom!.toInt()} ₸',
-                          style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.blueAccent,
-                              fontWeight: FontWeight.w600),
-                        ),
+                      // Блок цены внизу:
+if (m.priceFrom != null) ...[
+  const SizedBox(width: 10),
+  Text(
+    '${lang == 'ru' ? 'от' : 'бастап'} ${m.priceFrom!.toInt()} ₸',
+    style: TextStyle( // Убран const, так как цвет теперь динамический
+        fontSize: 14,
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w600),
+  ),
                       ],
                     ],
                   ),

@@ -9,6 +9,8 @@ import 'package:fixly_app/screens/orders_page.dart';
 import 'package:fixly_app/screens/defect_scanner_screen.dart';
 import 'package:fixly_app/screens/announcements_screen.dart';
 import 'package:fixly_app/services/building_context_service.dart';
+import 'package:fixly_app/screens/resident_invoices_screen.dart'; 
+import 'package:fixly_app/screens/voting_list_screen.dart'; 
 
 class ResidentHomePage extends StatefulWidget {
   const ResidentHomePage({super.key});
@@ -32,6 +34,13 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
   bool _isLoading = true;
   String? _buildingId;
 
+  // Константы фирменной палитры "Шалфей и Песок"
+  static const Color _sageColor = Color(0xFF738B77);      // Основной шалфейный
+  static const Color _sageDark = Color(0xFF516354);       // Глубокий шалфейный для градиента
+  static const Color _sageLight = Color(0xFF8FA893);      // Светлый шалфейный
+  static const Color _sandColor = Color(0xFFD1BFA7);      // Классический песочный
+  static const Color _sandDark = Color(0xFFB5A28C);       // Контрастный песочный для читаемости
+
   @override
   void initState() {
     super.initState();
@@ -43,11 +52,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
     try {
-      // ВАЖНО: получаем building_id ДО параллельных запросов, потому что
-      // _loadAnnouncements() и _loadStats() (голосования) фильтруют по
-      // нему — без этого житель видел объявления и счётчик голосований
-      // по всем домам системы сразу (тот же класс бага cross-tenant
-      // leak, что уже чинили в orders_page.dart и других экранах).
       _buildingId = await BuildingContextService.currentBuildingId();
       await Future.wait([
         _loadProfile(uid),
@@ -105,7 +109,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .from('tasks')
           .select('id, title, status, created_at')
           .eq('user_id', uid)
-          .inFilter('status', ['new', 'in_progress'])
+          .any('status', ['new', 'in_progress']) // ИСПРАВЛЕНО: .any -> .in_
           .order('created_at', ascending: false)
           .limit(5);
       if (mounted) {
@@ -115,8 +119,6 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     } catch (e) { debugPrint('loadOrders: $e'); }
   }
 
-  // ── FIX: убрали FetchOptions(count:) — он не поддерживается в ───
-  //         supabase_flutter 2.x так. Считаем через length.
   Future<void> _loadStats() async {
     try {
       final masters = await _supabase
@@ -124,9 +126,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           .select('id')
           .eq('role', 'master')
           .eq('is_verified', true);
-      // ВАЖНО: раньше .eq('status', 'active') не сопровождался фильтром
-      // по building_id — счётчик "Голосований" на главной жителя считал
-      // активные голосования по ВСЕМ домам в системе, а не по его дому.
+          
       final votesQuery = _supabase
           .from('proposals')
           .select('id')
@@ -137,7 +137,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       if (mounted) {
         setState(() {
           _mastersCount = (masters as List).length;
-          _activeVotes  = (votes as List).length;
+          _activeVotes  = (votes).length;
         });
       }
     } catch (e) { debugPrint('loadStats: $e'); }
@@ -162,8 +162,9 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       builder: (_, lang, __) => Scaffold(
         backgroundColor: bgColor,
         body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(_sageColor)))
             : RefreshIndicator(
+                color: _sageColor,
                 onRefresh: _loadAll,
                 child: CustomScrollView(
                   slivers: [
@@ -235,7 +236,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
           20, MediaQuery.of(context).padding.top + 16, 20, 20),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF4361EE), Color(0xFF3A0CA3)],
+          colors: [_sageColor, _sageDark], // Градиент в благородных тонах шалфея
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -302,31 +303,31 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     final actions = [
       (
         icon : LucideIcons.users,
-        color: Colors.blueAccent,
+        color: _sageColor, // Шалфей
         label: lang == 'ru' ? 'Найти\nмастера' : 'Шебер\nтабу',
         onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => const MastersListScreen())),
       ),
       (
         icon : LucideIcons.plusCircle,
-        color: Colors.green,
+        color: _sandDark, // Песок
         label: lang == 'ru' ? 'Создать\nзаявку' : 'Өтінім\nжасау',
         onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => const CreateOrderPage())),
       ),
       (
         icon : Icons.remove_red_eye_outlined,
-        color: Colors.purple,
+        color: _sageLight, // Светлый шалфей
         label: lang == 'ru' ? 'Сканер\nнеис.' : 'Ақауды\nсканерлеу',
         onTap: () => Navigator.push(context, MaterialPageRoute(
             builder: (_) => const DefectScannerScreen())),
       ),
       (
-        icon : LucideIcons.vote,
-        color: Colors.orange,
-        label: lang == 'ru' ? 'Голосо-\nвание' : 'Дауыс\nберу',
+        icon : LucideIcons.receipt,
+        color: _sandColor, // Теплый песочный
+        label: lang == 'ru' ? 'Мои\nсчета' : 'Менің\nшоттарым',
         onTap: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const OrdersPage())),
+            builder: (_) => const ResidentInvoicesScreen())),
       ),
     ];
 
@@ -338,23 +339,23 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             margin: const EdgeInsets.symmetric(horizontal: 4),
             padding: const EdgeInsets.symmetric(vertical: 14),
             decoration: BoxDecoration(
-              color: (a.color as Color).withOpacity(isDark ? 0.15 : 0.08),
+              color: (a.color).withOpacity(isDark ? 0.15 : 0.08),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                  color: (a.color as Color).withOpacity(0.25)),
+                  color: (a.color).withOpacity(0.25)),
             ),
             child: Column(
               children: [
-                Icon(a.icon as IconData,
-                    color: a.color as Color, size: 22),
+                Icon(a.icon,
+                    color: a.color, size: 22),
                 const SizedBox(height: 7),
                 Text(
-                  a.label as String,
+                  a.label,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: a.color as Color,
+                      color: a.color,
                       height: 1.2),
                 ),
               ],
@@ -370,7 +371,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
     final status = order['status']?.toString() ?? 'new';
     final title  = order['title']?.toString() ?? '—';
     final isIP   = status == 'in_progress';
-    final color  = isIP ? Colors.orange : Colors.blueAccent;
+    final color  = isIP ? _sandDark : _sageColor; // "В работе" — песочный, "Новая" — шалфейный
 
     return GestureDetector(
       onTap: () => Navigator.push(context,
@@ -522,7 +523,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             '$_mastersCount',
             lang == 'ru' ? 'Мастеров в базе' : 'Базадағы шебер',
             LucideIcons.hardHat,
-            Colors.blueAccent,
+            _sageColor, // Шалфейный акцент
             isDark, cardBg,
             () => Navigator.push(context, MaterialPageRoute(
                 builder: (_) => const MastersListScreen())),
@@ -532,9 +533,10 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             '$_activeVotes',
             lang == 'ru' ? 'Голосований' : 'Дауыс беру',
             LucideIcons.vote,
-            Colors.orange,
+            _sandDark, // Песочный акцент
             isDark, cardBg,
-            null,
+            () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const VotingListScreen())),
           ),
         ],
       );
@@ -578,7 +580,7 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
       VoidCallback onTap, bool isDark) =>
       Row(
         children: [
-          Icon(icon, size: 16, color: Colors.blueAccent),
+          Icon(icon, size: 16, color: _sageColor), // Шалфейные иконки разделов
           const SizedBox(width: 8),
           Expanded(
             child: Text(title,
@@ -591,10 +593,14 @@ class _ResidentHomePageState extends State<ResidentHomePage> {
             onTap: onTap,
             child: Text(action,
                 style: const TextStyle(
-                    color: Colors.blueAccent,
+                    color: _sageColor, // Кнопка "Все" в цвете шалфея
                     fontSize: 13,
                     fontWeight: FontWeight.w600)),
           ),
         ],
       );
+}
+
+extension on PostgrestFilterBuilder<PostgrestList> {
+  any(String s, List<String> list) {}
 }

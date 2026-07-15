@@ -1,10 +1,10 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/services/building_context_service.dart';
-import 'package:fixly_app/widgets/app_shimmer.dart';
 
 class AnnouncementsScreen extends StatefulWidget {
   const AnnouncementsScreen({super.key});
@@ -26,6 +26,8 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
   // Отдельные каналы для insert/delete (нет .all в 2.x)
   RealtimeChannel? _insertChannel;
   RealtimeChannel? _deleteChannel;
+  
+  BuildContext? get ctx => null;
 
   @override
   void initState() {
@@ -215,7 +217,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 width: double.infinity, height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
+                    backgroundColor: AppColors.of(ctx).primary,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
@@ -310,7 +312,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         floatingActionButton: _isChairman
             ? FloatingActionButton(
                 onPressed: _create,
-                backgroundColor: Colors.blueAccent,
+                backgroundColor: AppColors.of(ctx!).primary,
                 child: const Icon(LucideIcons.plus, color: Colors.white),
               )
             : null,
@@ -419,15 +421,15 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: (isUrgent ? Colors.red : Colors.blueAccent)
-                        .withOpacity(0.1),
+                    color: (isUrgent ? Colors.red : AppColors.of(context).primary)
+                    .withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
                     isUrgent
                         ? LucideIcons.alertTriangle
                         : LucideIcons.bell,
-                    color: isUrgent ? Colors.red : Colors.blueAccent,
+                    color: isUrgent ? Colors.red : AppColors.of(context).primary,
                     size: 18,
                   ),
                 ),
@@ -602,7 +604,7 @@ class _AnnouncementsScreenState extends State<AnnouncementsScreen> {
         hintText: hint,
         hintStyle:
             const TextStyle(color: Colors.grey, fontSize: 13),
-        prefixIcon: Icon(icon, color: Colors.blueAccent, size: 18),
+        prefixIcon: Icon(icon, color: AppColors.of(context).primary, size: 18),
         filled: true,
         fillColor:
             isDark ? Colors.white10 : Colors.grey.shade50,

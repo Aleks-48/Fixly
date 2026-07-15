@@ -68,7 +68,7 @@ class _HomePageState extends State<HomePage> {
             Icon(
               role == 'chairman' ? LucideIcons.building : LucideIcons.hardHat,
               size: 80,
-              color: Colors.blue,
+              color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(height: 20),
             Text(

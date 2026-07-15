@@ -245,7 +245,7 @@ class _MasterDetailPageState extends State<MasterDetailPage>
         const SizedBox(width: 10),
         _iconBtn(
           LucideIcons.messageSquare,
-          Colors.blueAccent,
+Theme.of(context).colorScheme.primary,
           () => Navigator.push(
             context,
             MaterialPageRoute(
@@ -306,7 +306,7 @@ class _MasterDetailPageState extends State<MasterDetailPage>
             _experienceText,
             lang == 'ru' ? 'Опыт' : 'Тәжірибе',
             LucideIcons.award,
-            Colors.blueAccent,
+Theme.of(context).colorScheme.primary,
           ),
         ],
       ),
@@ -413,8 +413,8 @@ class _MasterDetailPageState extends State<MasterDetailPage>
                 lang == 'ru' ? 'Отзывы' : 'Пікірлер'),
             Text(
               '${_reviews.length}',
-              style: const TextStyle(
-                  color: Colors.blueAccent,
+              style: TextStyle(
+color: Theme.of(context).colorScheme.primary,
                   fontWeight: FontWeight.bold,
                   fontSize: 16),
             ),

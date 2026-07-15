@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -122,7 +123,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(LucideIcons.camera, color: Colors.blueAccent),
+              leading: Icon(LucideIcons.camera, color: AppColors.of(context).primary),
               title: Text(lang == 'ru' ? 'Сделать фото' : 'Суретке түсіру'),
               onTap: () async {
                 Navigator.pop(context);
@@ -132,7 +133,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               },
             ),
             ListTile(
-              leading: const Icon(LucideIcons.image, color: Colors.blueAccent),
+              leading: Icon(LucideIcons.image, color: AppColors.of(context).primary),
               title: Text(lang == 'ru' ? 'Выбрать из галереи' : 'Галереядан таңдау'),
               onTap: () async {
                 Navigator.pop(context);
@@ -403,7 +404,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                             fontSize: 16),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
+                        backgroundColor: AppColors.of(context).primary,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16)),
                         elevation: 0,
@@ -429,20 +430,20 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blueAccent.withOpacity(0.1),
+        color: AppColors.of(context).primary.withOpacity(0.1),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+        border: Border.all(color: AppColors.of(context).primary.withOpacity(0.3)),
       ),
       child: Row(
         children: [
-          const Icon(LucideIcons.userCheck,
-              color: Colors.blueAccent, size: 20),
+          Icon(LucideIcons.userCheck,
+              color: AppColors.of(context).primary, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               '${lang == 'ru' ? 'Мастер' : 'Шебер'}: ${widget.masterName}',
-              style: const TextStyle(
-                  color: Colors.blueAccent, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                  color: AppColors.of(context).primary, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -494,12 +495,12 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: isSelected
-                  ? Colors.blueAccent
+                 ? AppColors.of(context).primary
                   : (isDark ? const Color(0xFF1A1A1C) : Colors.white),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isSelected
-                    ? Colors.blueAccent
+                   ? AppColors.of(context).primary
                     : (isDark
                         ? Colors.white.withOpacity(0.1)
                         : Colors.grey.shade200),
@@ -510,7 +511,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               children: [
                 Icon(icon,
                     size: 15,
-                    color: isSelected ? Colors.white : Colors.blueAccent),
+                    color: isSelected ? Colors.white : AppColors.of(context).primary),
                 const SizedBox(width: 6),
                 Text(
                   label,
@@ -663,10 +664,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
         prefixIcon: maxLines == 1
-            ? Icon(icon, color: Colors.blueAccent, size: 18)
+           ? Icon(icon, color: AppColors.of(context).primary, size: 18)
             : Padding(
                 padding: const EdgeInsets.only(left: 12, top: 12),
-                child: Icon(icon, color: Colors.blueAccent, size: 18),
+                child: Icon(icon, color: AppColors.of(context).primary, size: 18),
               ),
         prefixIconConstraints: maxLines > 1
             ? const BoxConstraints(minWidth: 40)
@@ -692,7 +693,7 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide:
-              const BorderSide(color: Colors.blueAccent, width: 1.5),
+              BorderSide(color: AppColors.of(context).primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),

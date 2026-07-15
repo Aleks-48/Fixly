@@ -1,3 +1,4 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:jitsi_meet_flutter_sdk/jitsi_meet_flutter_sdk.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -140,8 +141,7 @@ class _CallScreenState extends State<CallScreen>
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.blueAccent.withOpacity(0.35),
-                      blurRadius: 36,
+color: AppColors.of(context).primary.withOpacity(0.35),                      blurRadius: 36,
                       spreadRadius: 6,
                     ),
                   ],

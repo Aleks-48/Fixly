@@ -1,5 +1,6 @@
 import 'dart:io' show File;
 import 'dart:async';
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -226,11 +227,9 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: Colors.blueAccent.withOpacity(0.2),
-            child: Text(
+          backgroundColor: AppColors.of(context).primary.withOpacity(0.2),            child: Text(
               widget.receiverName.isNotEmpty ? widget.receiverName[0].toUpperCase() : "?",
-              style: const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold, fontSize: 14),
-            ),
+style: TextStyle(color: AppColors.of(context).primary, fontWeight: FontWeight.bold, fontSize: 14),            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -314,8 +313,8 @@ class _ChatScreenState extends State<ChatScreen> {
         alignment: Alignment.center,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(color: Colors.blueAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-          child: Text(msg['content'], textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.blueAccent, fontWeight: FontWeight.w500)),
+decoration: BoxDecoration(color: AppColors.of(context).primary.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+          child: Text(msg['content'], textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: AppColors.of(context).primary, fontWeight: FontWeight.w500)),
         ),
       );
     }
@@ -330,7 +329,7 @@ class _ChatScreenState extends State<ChatScreen> {
         margin: const EdgeInsets.only(bottom: 8),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         decoration: BoxDecoration(
-          color: isMe ? Colors.blueAccent : (isDark ? const Color(0xFF2C2C2E) : Colors.white),
+          color: isMe ? AppColors.of(context).primary : (isDark ? const Color(0xFF2C2C2E) : Colors.white),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -388,7 +387,7 @@ class _ChatScreenState extends State<ChatScreen> {
           constraints: const BoxConstraints(),
           padding: EdgeInsets.zero,
           icon: Icon(isPlaying ? LucideIcons.pauseCircle : LucideIcons.playCircle, 
-                color: (msg['sender_id'] == myId) ? Colors.white : Colors.blueAccent, size: 32),
+                color: (msg['sender_id'] == myId) ? Colors.white : AppColors.of(context).primary, size: 32),
           onPressed: () async {
             if (isPlaying) {
               await _audioPlayer.pause();
@@ -416,7 +415,7 @@ class _ChatScreenState extends State<ChatScreen> {
       child: SafeArea(
         child: Row(
           children: [
-            IconButton(icon: const Icon(LucideIcons.paperclip, color: Colors.blueAccent), onPressed: _pickImage),
+            IconButton(icon: Icon(LucideIcons.paperclip, color: AppColors.of(context).primary), onPressed: _pickImage),
             Expanded(
               child: TextField(
                 controller: _messageController,
@@ -441,7 +440,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 duration: const Duration(milliseconds: 200),
                 width: 48, height: 48,
                 decoration: BoxDecoration(
-                  color: _isRecording ? Colors.red : Colors.blueAccent,
+                  color: _isRecording ? Colors.red : AppColors.of(context).primary,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -540,7 +539,7 @@ class _ChatScreenState extends State<ChatScreen> {
           TextField(controller: partsCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: "Запчасти / Материалы (₸)", prefixIcon: Icon(LucideIcons.package))),
           const SizedBox(height: 24),
           SizedBox(width: double.infinity, height: 56, child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.of(context).primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
             onPressed: () async {
               final labor = int.tryParse(laborCtrl.text) ?? 0;
               final parts = int.tryParse(partsCtrl.text) ?? 0;
@@ -607,12 +606,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _step(String label, bool active) => Column(children: [
-    Icon(active ? LucideIcons.checkCircle2 : LucideIcons.circle, color: active ? Colors.blueAccent : Colors.grey[300], size: 18),
+    Icon(active ? LucideIcons.checkCircle2 : LucideIcons.circle, color: active ? AppColors.of(context).primary : Colors.grey[300], size: 18),
     const SizedBox(height: 4),
     Text(label, style: TextStyle(fontSize: 13, fontWeight: active ? FontWeight.bold : FontWeight.normal, color: active ? (isDark?Colors.white:Colors.black) : Colors.grey)),
   ]);
 
-  Widget _line(bool active) => Expanded(child: Container(height: 2, color: active ? Colors.blueAccent : Colors.grey[200], margin: const EdgeInsets.symmetric(horizontal: 8)));
+  Widget _line(bool active) => Expanded(child: Container(height: 2, color: active ? AppColors.of(context).primary : Colors.grey[200], margin: const EdgeInsets.symmetric(horizontal: 8)));
 
   Widget _buildPaymentShield() {
     return StreamBuilder(
@@ -657,7 +656,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: () {
               if (t.contains("фото")) {
                 setState(() => _awaitingPortfolioPhoto = true);
-                _showSnackBar("Нажмите на скрепку для фото", Colors.blueAccent);
+                _showSnackBar("Нажмите на скрепку для фото", AppColors.of(context).primary);
               } else {
                 _messageController.text = t; _sendMessage();
               }

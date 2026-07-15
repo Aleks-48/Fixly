@@ -1,3 +1,4 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -5,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/services/building_context_service.dart';
-import 'package:fixly_app/widgets/app_shimmer.dart';
 
 // ============================================================
 //  LibraryScreen — библиотека нормативных документов ЖК
@@ -182,8 +182,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 value: selCat,
                 decoration: InputDecoration(
                   labelText: lang == 'ru' ? 'Категория' : 'Санат',
-                  prefixIcon: const Icon(LucideIcons.folder,
-                      color: Colors.blueAccent, size: 18),
+                  prefixIcon: Icon(LucideIcons.folder,
+                 color: Theme.of(context).colorScheme.primary, size: 18),
                   filled: true,
                   fillColor: isDark ? Colors.white10 : Colors.grey.shade50,
                   border: OutlineInputBorder(
@@ -207,7 +207,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 width: double.infinity, height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
+                    // Строка 210: Задний фон кнопки или круглого аватара[cite: 15]
+backgroundColor: Theme.of(context).colorScheme.primary,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
@@ -268,7 +269,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           floatingActionButton: _isChairman
               ? FloatingActionButton(
                   onPressed: _addDoc,
-                  backgroundColor: Colors.blueAccent,
+                  // Строка 210: Задний фон кнопки или круглого аватара[cite: 15]
+backgroundColor: Theme.of(context).colorScheme.primary,
                   child: const Icon(LucideIcons.plus, color: Colors.white),
                 )
               : null,
@@ -319,14 +321,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                             horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
                           color: sel
-                              ? Colors.blueAccent
+                              // Строка 322: Условный выбор основного цвета[cite: 15]
+? Theme.of(context).colorScheme.primary
                               : (isDark
                                   ? const Color(0xFF1A1A1C)
                                   : Colors.white),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: sel
-                                ? Colors.blueAccent
+                                // Строка 322: Условный выбор основного цвета[cite: 15]
+? Theme.of(context).colorScheme.primary
                                 : Colors.grey.withOpacity(0.25),
                           ),
                         ),
@@ -408,11 +412,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
             Container(
               width: 44, height: 44,
               decoration: BoxDecoration(
-                color: Colors.blueAccent.withOpacity(0.1),
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(iconData,
-                  color: Colors.blueAccent, size: 22),
+                  color: Theme.of(context).colorScheme.primary, size: 22),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -433,13 +437,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: Colors.blueAccent.withOpacity(0.1),
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(catLabel,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 10,
-                                color: Colors.blueAccent)),
+                                color: Theme.of(context).colorScheme.primary)),
                       ),
                       const SizedBox(width: 8),
                       Text(
@@ -499,7 +503,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-        prefixIcon: Icon(icon, color: Colors.blueAccent, size: 18),
+        prefixIcon: Icon(icon, color: Theme.of(context).colorScheme.primary, size: 18),
         filled: true,
         fillColor: isDark ? Colors.white10 : Colors.grey.shade50,
         border: OutlineInputBorder(

@@ -1,3 +1,4 @@
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons/lucide_icons.dart';
@@ -8,7 +9,6 @@ import 'package:fixly_app/services/voting_service.dart';
 import 'package:fixly_app/utils/app_texts.dart';
 import 'package:fixly_app/utils/app_error_handler.dart';
 import 'package:fixly_app/services/notification_service.dart';
-import 'package:fixly_app/widgets/app_shimmer.dart';
 import 'package:fixly_app/main.dart';
 
 class VotingListScreen extends StatefulWidget {
@@ -24,6 +24,12 @@ class _VotingListScreenState extends State<VotingListScreen> {
   bool _canCreate = false;
   List<Map<String, dynamic>> _items = [];
   String? _error;
+
+  // Эко-палитра "Шалфей и Песок" для статусов и акцентов
+  static const _sageColor = Color(0xFF738B77);  // Шалфей (активно / основные действия)
+  static const _sandColor = Color(0xFFD1BFA7);  // Песок (черновик)
+  static const _stoneGray = Color(0xFF9E9B98);  // Теплый камень (закрыто)
+  static const _dustyTaupe = Color(0xFF8C857B); // Пыльный тауп (в архиве)
 
   @override
   void initState() {
@@ -86,18 +92,19 @@ class _VotingListScreenState extends State<VotingListScreen> {
               IconButton(
                 tooltip: AppTexts.get('create_voting', lang),
                 onPressed: _showCreateDialog,
-                icon: const Icon(LucideIcons.plusCircle),
+                icon: const Icon(LucideIcons.plusCircle, color: _sageColor),
               ),
           ],
         ),
         floatingActionButton: _canCreate
             ? FloatingActionButton(
                 onPressed: _showCreateDialog,
-                backgroundColor: Colors.blueAccent,
+                backgroundColor: _sageColor,
                 child: const Icon(LucideIcons.plus, color: Colors.white),
               )
             : null,
         body: RefreshIndicator(
+          color: _sageColor,
           onRefresh: _load,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
@@ -140,6 +147,8 @@ class _VotingListScreenState extends State<VotingListScreen> {
             child: ChoiceChip(
               label: Text(entry.value),
               selected: selected,
+              selectedColor: _sageColor.withOpacity(0.2),
+              checkmarkColor: _sageColor,
               onSelected: (_) {
                 setState(() => _status = entry.key);
                 _load();
@@ -229,89 +238,39 @@ class _VotingListScreenState extends State<VotingListScreen> {
 
   Future<void> _showCreateDialog() async {
     final lang = appLanguage.value;
-    final titleCtrl = TextEditingController();
-    final descriptionCtrl = TextEditingController();
-    final daysCtrl = TextEditingController(text: '7');
 
     final created = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppTexts.get('new_voting', lang)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              decoration: InputDecoration(labelText: AppTexts.get('voting_question', lang)),
-              autofocus: true,
-            ),
-            TextField(
-              controller: descriptionCtrl,
-              decoration: InputDecoration(labelText: AppTexts.get('voting_description', lang)),
-              maxLines: 2,
-            ),
-            TextField(
-              controller: daysCtrl,
-              decoration: InputDecoration(labelText: AppTexts.get('voting_days', lang)),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(AppTexts.get('cancel', lang))),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleCtrl.text.trim().isEmpty) return;
-              try {
-                final row = await VotingService.createProposal(
-                  title: titleCtrl.text,
-                  description: descriptionCtrl.text,
-                  days: int.tryParse(daysCtrl.text) ?? 7,
-                );
-                if (ctx.mounted) Navigator.pop(ctx, row);
-                
-                // Получаем ID дома из сервиса
-                final contextData = await BuildingContextService.loadCurrent();
-                if (contextData?.buildingId != null) {
-                  NotificationService.notifyBuilding(
-                    buildingId: contextData!.buildingId!,
-                    title: AppTexts.get('new_voting', lang),
-                    body: titleCtrl.text,
-                  );
-                }
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(e.toString())),
-                  );
-                }
-              }
-            },
-            child: Text(AppTexts.get('create', lang)),
-          ),
-        ],
-      ),
-      );
-      
-    Future.delayed(const Duration(seconds: 1), () {
-      titleCtrl.dispose();
-      descriptionCtrl.dispose();
-      daysCtrl.dispose();
-    });
+      builder: (ctx) => _CreateVotingDialog(lang: lang),
+    );
 
     if (created != null && mounted) {
+      try {
+        final contextData = await BuildingContextService.loadCurrent();
+        if (contextData?.buildingId != null) {
+          await NotificationService.notifyBuilding(
+            buildingId: contextData!.buildingId!,
+            title: AppTexts.get('new_voting', lang),
+            body: created['title']?.toString() ?? '',
+          );
+        }
+      } catch (e) {
+        debugPrint('Ошибка отправки уведомления: $e');
+      }
+
       await _load();
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => VotingPage(
-            proposalId: created['id'].toString(),
-            proposalTitle: created['title']?.toString() ?? '',
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VotingPage(
+              proposalId: created['id'].toString(),
+              proposalTitle: created['title']?.toString() ?? '',
+            ),
           ),
-        ),
-      );
+        );
+      }
     }
   }
 
@@ -342,13 +301,183 @@ class _VotingListScreenState extends State<VotingListScreen> {
   Color _statusColor(String status) {
     switch (status) {
       case 'draft':
-        return Colors.orange;
+        return _sandColor;    // Песочный цвет для черновиков
       case 'closed':
-        return Colors.grey;
+        return _stoneGray;    // Мягкий серый камень
       case 'archived':
-        return Colors.blueGrey;
+        return _dustyTaupe;   // Природный пыльный тауп
       default:
-        return Colors.green;
+        return _sageColor;    // Шалфейный для активных
     }
+  }
+}
+
+class _CreateVotingDialog extends StatefulWidget {
+  final String lang;
+  const _CreateVotingDialog({required this.lang});
+
+  @override
+  State<_CreateVotingDialog> createState() => _CreateVotingDialogState();
+}
+
+class _CreateVotingDialogState extends State<_CreateVotingDialog> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _descriptionCtrl;
+  late final TextEditingController _daysCtrl;
+  bool _isSubmitting = false;
+
+  static const _sageAccent = Color(0xFF738B77);
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController();
+    _descriptionCtrl = TextEditingController();
+    _daysCtrl = TextEditingController(text: '7');
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descriptionCtrl.dispose();
+    _daysCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final titleText = _titleCtrl.text.trim();
+    if (titleText.isEmpty) return;
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final row = await VotingService.createProposal(
+        title: titleText,
+        description: _descriptionCtrl.text.trim(),
+        days: int.tryParse(_daysCtrl.text.trim()) ?? 7,
+      );
+      if (mounted) {
+        Navigator.pop(context, row);
+      }
+    } catch (e) {
+      setState(() => _isSubmitting = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    final dialogBg = isDark ? const Color(0xFF1B1F24) : Colors.white;
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final subColor = isDark ? Colors.white60 : Colors.black54;
+
+    return AlertDialog(
+      backgroundColor: dialogBg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(
+        AppTexts.get('new_voting', widget.lang),
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+        ),
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleCtrl,
+              style: TextStyle(color: textColor, fontSize: 15),
+              decoration: InputDecoration(
+                labelText: AppTexts.get('voting_question', widget.lang),
+                labelStyle: TextStyle(color: subColor, fontSize: 14),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.black12),
+                ),
+                focusedBorder: const UnderlineInputBorder(
+                  borderSide: BorderSide(color: _sageAccent),
+                ),
+              ),
+              autofocus: true,
+              enabled: !_isSubmitting,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _descriptionCtrl,
+              style: TextStyle(color: textColor, fontSize: 15),
+              decoration: InputDecoration(
+                labelText: AppTexts.get('voting_description', widget.lang),
+                labelStyle: TextStyle(color: subColor, fontSize: 14),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.black12),
+                ),
+                focusedBorder: const UnderlineInputBorder(
+                  borderSide: BorderSide(color: _sageAccent),
+                ),
+              ),
+              maxLines: 2,
+              enabled: !_isSubmitting,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _daysCtrl,
+              style: TextStyle(color: textColor, fontSize: 15),
+              decoration: InputDecoration(
+                labelText: AppTexts.get('voting_days', widget.lang),
+                labelStyle: TextStyle(color: subColor, fontSize: 14),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: isDark ? Colors.white24 : Colors.black12),
+                ),
+                focusedBorder: const UnderlineInputBorder(
+                  borderSide: BorderSide(color: _sageAccent),
+                ),
+              ),
+              keyboardType: TextInputType.number,
+              enabled: !_isSubmitting,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+          child: Text(
+            AppTexts.get('cancel', widget.lang),
+            style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w600),
+          ),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _sageAccent,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+          onPressed: _isSubmitting ? null : _submit,
+          child: _isSubmitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  AppTexts.get('create', widget.lang),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+        ),
+      ],
+    );
   }
 }

@@ -187,7 +187,11 @@ class _HomePageState extends State<HomePage> {
                           ? Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(LucideIcons.imagePlus, color: Colors.blue[400], size: 32),
+                                Icon(
+  LucideIcons.imagePlus, 
+  color: Theme.of(context).colorScheme.primary, 
+  size: 32,
+),
                                 const SizedBox(height: 8),
                                 Text(
                                   appLanguage.value == 'ru' ? "Прикрепить фото" : "Суреттіแนบ",
@@ -305,7 +309,10 @@ class _HomePageState extends State<HomePage> {
           children: [
             const SizedBox(height: 8),
             ListTile(
-              leading: const Icon(LucideIcons.camera, color: Colors.blue),
+              leading: Icon(
+  LucideIcons.camera, 
+  color: Theme.of(context).colorScheme.primary, 
+),
               title: Text(appLanguage.value == 'ru' ? "Сделать снимок" : "Суретке түсіру"),
               onTap: () async {
                 Navigator.pop(context);
@@ -553,8 +560,15 @@ class _HomePageState extends State<HomePage> {
         children: [
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: Colors.blue.withOpacity(0.05), shape: BoxShape.circle),
-            child: Icon(LucideIcons.inbox, size: 64, color: Colors.blue[200]),
+            decoration: BoxDecoration(
+  color: Theme.of(context).colorScheme.primary.withOpacity(0.08), 
+  shape: BoxShape.circle,
+),
+            child: Icon(
+  LucideIcons.inbox, 
+  size: 64, 
+  color: Theme.of(context).colorScheme.primary.withOpacity(0.6), 
+),
           ),
           const SizedBox(height: 20),
           Text(

@@ -58,8 +58,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: Colors.blueAccent)),
+      return Scaffold(
+body: Center(child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary)),
       );
     }
 
@@ -122,7 +122,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                     MaterialPageRoute(builder: (context) => const CreateOrderPage(initialCategory: '', masterId:'', masterName:'', prefillDescription: '',)),
                   );
                 },
-                backgroundColor: Colors.blueAccent,
+                backgroundColor: Theme.of(context).colorScheme.primary,
                 shape: const CircleBorder(),
                 elevation: 8,
                 child: const Icon(LucideIcons.plus, color: Colors.white, size: 35),
@@ -195,8 +195,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         children: [
           Icon(
             icon,
-            color: isSelected ? Colors.blueAccent : Colors.grey,
-            size: 24,
+            color: isSelected 
+    ? Theme.of(context).colorScheme.primary 
+    : (Theme.of(context).brightness == Brightness.dark ? Colors.white38 : Colors.black38),
           ),
           const SizedBox(height: 4),
           Text(
@@ -205,8 +206,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: isSelected ? Colors.blueAccent : Colors.grey,
-              fontSize: 13,
+              color: isSelected 
+    ? Theme.of(context).colorScheme.primary 
+    : (Theme.of(context).brightness == Brightness.dark ? Colors.white38 : Colors.black38),
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
           ),

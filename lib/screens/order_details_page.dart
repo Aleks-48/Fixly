@@ -23,6 +23,14 @@ class OrderDetailsPage extends StatefulWidget {
 class _OrderDetailsPageState extends State<OrderDetailsPage> {
   final _supabase = Supabase.instance.client;
   bool _isLoading = false;
+  
+  get _sageColor => null;
+  
+  get _sandDark => null;
+  
+  get _oliveGreen => null;
+  
+  get _terracotta => null;
 
   // ── ЗВОНОК ─────────────────────────────────────────────────
   Future<void> _makeCall(String? phone) async {
@@ -294,7 +302,8 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                 height: 52,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blueAccent,
+                    // 1. Главный фон
+backgroundColor: Theme.of(context).colorScheme.primary,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
@@ -437,10 +446,11 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
           Row(
             children: [
               CircleAvatar(
-                backgroundColor:
-                    Colors.blue.withOpacity(0.1),
-                child: const Icon(Icons.person,
-                    color: Colors.blue, size: 20),
+                // 2. Аватарка/иконка пользователя (убран const перед Icon, так как тема динамическая)
+               backgroundColor:
+                    Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                child: Icon(Icons.person,
+                    color: Theme.of(context).colorScheme.primary, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -503,13 +513,25 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
   }
 
   // ── СТАТУС BADGE ───────────────────────────────────────────
-  Widget _statusBadge(String status, String lang) {
-    final Map<String, Map<String, dynamic>> cfg = {
-      'new'        : {'label': lang == 'ru' ? 'Новая' : 'Жаңа',         'color': Colors.blueAccent},
-      'in_progress': {'label': lang == 'ru' ? 'В работе' : 'Жұмыста',   'color': Colors.orange},
-      'completed'  : {'label': lang == 'ru' ? 'Выполнено' : 'Орындалды', 'color': Colors.green},
-      'cancelled'  : {'label': lang == 'ru' ? 'Отменено' : 'Бас тартылды', 'color': Colors.red},
-    };
+Widget _statusBadge(String status, String lang) {
+  final Map<String, Map<String, dynamic>> cfg = {
+    'new': {
+      'label': lang == 'ru' ? 'Новая' : 'Жаңа',
+      'color': _sageColor,
+    },
+    'in_progress': {
+      'label': lang == 'ru' ? 'В работе' : 'Жұмыста',
+      'color': _sandDark,
+    },
+    'completed': {
+      'label': lang == 'ru' ? 'Выполнено' : 'Орындалды',
+      'color': _oliveGreen,
+    },
+    'cancelled': {
+      'label': lang == 'ru' ? 'Отменено' : 'Бас тартылды',
+      'color': _terracotta,
+    },
+  };
     final entry = cfg[status] ?? cfg['new']!;
     final Color c = entry['color'] as Color;
     return Container(
@@ -569,9 +591,10 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                     crossAxisAlignment:
                         CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.radio_button_checked,
+                      Icon(Icons.radio_button_checked,
                           size: 14,
-                          color: Colors.blueAccent),
+                          // 3. Цвет элемента или текста
+                          color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -776,11 +799,11 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                         const SizedBox(width: 6),
                         Text(
                           '${basePrice.toInt()} ₸',
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: Colors.blueAccent),
-                        ),
+// 3. Цвет элемента или текста
+                          color: Theme.of(context).colorScheme.primary),                        ),
                       ],
                     ),
 
@@ -814,7 +837,7 @@ class _OrderDetailsPageState extends State<OrderDetailsPage> {
                           label: lang == 'ru'
                               ? 'Взять в работу'
                               : 'Жұмысқа алу',
-                          color: Colors.blueAccent,
+color: Theme.of(context).colorScheme.primary,
                           icon: LucideIcons.play,
                           onTap: () => _updateStatus(
                               'in_progress', lang,

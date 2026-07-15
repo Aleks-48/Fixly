@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:fixly_app/screens/orders_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -80,16 +81,16 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(LucideIcons.camera, color: Colors.blueAccent),
-              title: Text(lang == 'ru' ? 'Сделать фото' : 'Суретке түсіру'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(LucideIcons.image, color: Colors.blueAccent),
-              title: Text(lang == 'ru' ? 'Из галереи' : 'Галереядан'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
+ListTile(
+  leading: Icon(LucideIcons.camera, color: c.primary), // Наш фирменный зеленый
+  title: Text(lang == 'ru' ? 'Сделать фото' : 'Суретке түсіру'),
+  onTap: () => Navigator.pop(context, ImageSource.camera),
+),
+ListTile(
+  leading: Icon(LucideIcons.image, color: c.primary), // Наш фирменный зеленый
+  title: Text(lang == 'ru' ? 'Из галереи' : 'Галереядан'),
+  onTap: () => Navigator.pop(context, ImageSource.gallery),
+),
           ],
         ),
       ),
@@ -161,11 +162,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 style: const TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueAccent,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
+style: ElevatedButton.styleFrom(
+  backgroundColor: c.primary, // Динамический цвет из темы
+  shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12)), // Сделали скругление 12 в соответствии с AppDimens.radiusSm
+),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(lang == 'ru' ? 'Добавить' : 'Қосу',
                 style: const TextStyle(color: Colors.white)),
@@ -285,16 +286,20 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
           ),
           floatingActionButton: _isOwner
-              ? FloatingActionButton(
-                  onPressed: _isUploading ? null : _addWork,
-                  backgroundColor: Colors.blueAccent,
-                  child: _isUploading
-                      ? const SizedBox(
-                          width: 22, height: 22,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2.5))
-                      : const Icon(LucideIcons.plus, color: Colors.white),
-                )
+? FloatingActionButton(
+    onPressed: _isUploading ? null : _addWork,
+    // Убрали backgroundColor вообще! FAB автоматически возьмет зеленый цвет из темы[cite: 7]
+    child: _isUploading 
+        ? const SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2.5,
+            ),
+          )
+        : const Icon(Icons.add), // Или твоя иконка добавления работы
+  )
               : null,
           body: _isLoading
               ? const Center(child: CircularProgressIndicator())

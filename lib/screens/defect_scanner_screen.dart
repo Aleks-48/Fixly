@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:fixly_app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
@@ -211,8 +212,8 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      const CircularProgressIndicator(
-                                        color: Colors.blueAccent,
+                                      CircularProgressIndicator(
+                                        color: AppColors.of(context).primary,
                                         strokeWidth: 3,
                                       ),
                                       const SizedBox(height: 20),
@@ -240,8 +241,8 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const CircularProgressIndicator(
-                                    color: Colors.blueAccent,
+                                  CircularProgressIndicator(
+                                    color: AppColors.of(context).primary,
                                     strokeWidth: 3,
                                   ),
                                   const SizedBox(height: 20),
@@ -293,7 +294,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _actionBtn(LucideIcons.image, _pickGallery, Colors.blueAccent.withOpacity(0.1), Colors.blueAccent),
+           _actionBtn(LucideIcons.image, _pickGallery, AppColors.of(context).primary.withOpacity(0.1), AppColors.of(context).primary),
             
             GestureDetector(
               onTap: _takePicture,
@@ -302,14 +303,14 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
                 height: 76,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.blueAccent, width: 4),
+                  border: Border.all(color: AppColors.of(context).primary, width: 4),
                 ),
                 child: Center(
                   child: Container(
                     width: 60,
                     height: 60,
-                    decoration: const BoxDecoration(
-                      color: Colors.blueAccent,
+                    decoration: BoxDecoration(
+                      color: AppColors.of(context).primary,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(LucideIcons.camera, color: Colors.white, size: 28),
@@ -384,7 +385,7 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
           spacing: 8,
           children: _detections.map((d) => Chip(
             visualDensity: VisualDensity.compact,
-            backgroundColor: Colors.blueAccent.withOpacity(0.05),
+            backgroundColor: AppColors.of(context).primary.withOpacity(0.05),
             side: BorderSide.none,
             avatar: Icon(LucideIcons.alertCircle, size: 14, color: Color(d.severityColor)),
             label: Text(d.labelRu, style: const TextStyle(fontSize: 14)),
@@ -422,10 +423,10 @@ class _DefectScannerScreenState extends State<DefectScannerScreen> {
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
-          backgroundColor: isOutline ? Colors.transparent : Colors.blueAccent,
-          foregroundColor: isOutline ? Colors.blueAccent : Colors.white,
+          backgroundColor: isOutline ? Colors.transparent : AppColors.of(context).primary,
+          foregroundColor: isOutline ? AppColors.of(context).primary : Colors.white,
           elevation: isOutline ? 0 : 2,
-          side: isOutline ? const BorderSide(color: Colors.blueAccent) : null,
+          side: isOutline ? BorderSide(color: AppColors.of(context).primary) : null,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),

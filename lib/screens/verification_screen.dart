@@ -1,3 +1,5 @@
+// lib/screens/verification_screen.dart
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -6,6 +8,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/services/building_context_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:fixly_app/theme/app_theme.dart'; // Подключение единой дизайн-системы Fixly
 
 // ============================================================
 //  VerificationScreen — верификация мастера
@@ -54,16 +57,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
     _loadCurrentStatus();
   }
 
-  // ВАЖНО: диагностика показала, что колонки 'specialty' нет в реальной
-  // таблице profiles в Supabase. Раньше ОБА запроса ниже (свой профиль
-  // и очередь председателя на верификацию) были в одном try/catch —
-  // ошибка на первом же select() из-за отсутствующей 'specialty'
-  // проглатывалась целиком, _isChairman оставался false (значение по
-  // умолчанию), и председатель вообще не попадал в свою ветку экрана —
-  // видел форму мастера вместо очереди одобрения заявок. Без миграции
-  // БД (правим только приложение) делаем оба запроса отказоустойчивыми:
-  // при ошибке "column ... does not exist" убираем эту колонку и
-  // повторяем запрос.
   final Set<String> _missingColumns = {};
 
   String? _extractMissingColumn(Object error) {
@@ -107,9 +100,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
         ) ==
         'chairman';
 
-    // Статус верификации из таблицы (эта таблица не завязана на
-    // profiles.specialty, отдельная ошибка тут маловероятна, но на
-    // всякий случай не роняем весь метод, если она всё же случится).
     Map<String, dynamic>? verif;
     try {
       verif = await _supabase
@@ -130,8 +120,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
       status = verif['status']?.toString() ?? 'pending';
     }
 
-    // Для председателя загружаем список ожидающих — тоже отказоустойчиво,
-    // на случай что join на profiles(...) споткнётся о ту же 'specialty'.
     List<Map<String, dynamic>> pending = [];
     if (isChairman) {
       for (var attempt = 0; attempt < 6; attempt++) {
@@ -190,10 +178,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
   // ── ОТПРАВИТЬ ЗАЯВКУ НА ВЕРИФИКАЦИЮ ──────────────────────
   Future<void> _submitVerification() async {
+    final c = AppColors.of(context);
     if (_idPhoto == null) {
       _showSnack(appLanguage.value == 'ru'
           ? 'Загрузите фото удостоверения личности'
-          : 'Жеке куәлік суретін жүктеңіз', Colors.orange);
+          : 'Жеке куәлік суретін жүктеңіз', c.warning);
       return;
     }
 
@@ -202,13 +191,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
     if (uid == null) return;
 
     try {
-      // Загружаем документы
       final idUrl      = await _uploadFile(_idPhoto!, 'verification/id');
       final selfieUrl  = _selfiePhoto != null
           ? await _uploadFile(_selfiePhoto!, 'verification/selfie')
           : null;
 
-      // Обновляем профиль
       await _supabase.from('profiles').update({
         'specialty'       : _selectedSpec,
         'description'     : _description.trim(),
@@ -216,7 +203,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
           'experience_years': int.tryParse(_experience) ?? 0,
       }).eq('id', uid);
 
-      // Создаём заявку на верификацию
       await _supabase.from('verifications').upsert({
         'user_id'      : uid,
         'status'       : 'pending',
@@ -231,11 +217,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
           appLanguage.value == 'ru'
               ? 'Заявка отправлена! Председатель проверит её в ближайшее время.'
               : 'Өтінім жіберілді! Төраға жақын арада тексереді.',
-          Colors.green,
+          c.success,
         );
       }
     } catch (e) {
-      _showSnack('Ошибка: $e', Colors.red);
+      _showSnack('Ошибка: $e', c.danger);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -244,6 +230,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
   // ── ПРЕДСЕДАТЕЛЬ: ОДОБРИТЬ / ОТКЛОНИТЬ ───────────────────
   Future<void> _reviewMaster(String verifId, String userId, bool approve) async {
     final lang = appLanguage.value;
+    final c = AppColors.of(context);
     try {
       final newStatus = approve ? 'verified' : 'rejected';
 
@@ -257,23 +244,25 @@ class _VerificationScreenState extends State<VerificationScreen> {
           .update({'is_verified': approve})
           .eq('id', userId);
 
-      _showSnack(
-        approve
-            ? (lang == 'ru' ? 'Мастер верифицирован ✓' : 'Шебер расталды ✓')
-            : (lang == 'ru' ? 'Заявка отклонена' : 'Өтінім қабылданбады'),
-        approve ? Colors.green : Colors.red,
-      );
+      if (mounted) {
+        _showSnack(
+          approve
+              ? (lang == 'ru' ? 'Мастер верифицирован ✓' : 'Шебер расталды ✓')
+              : (lang == 'ru' ? 'Заявка отклонена' : 'Өтінім қабылданбады'),
+          approve ? c.success : c.danger,
+        );
+      }
 
       _loadCurrentStatus();
     } catch (e) {
-      _showSnack('Ошибка: $e', Colors.red);
+      _showSnack('Ошибка: $e', c.danger);
     }
   }
 
   void _showSnack(String msg, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
+      content: Text(msg, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       backgroundColor: color,
       behavior: SnackBarBehavior.floating,
     ));
@@ -282,44 +271,44 @@ class _VerificationScreenState extends State<VerificationScreen> {
   // ── BUILD ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final isDark  = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? const Color(0xFF0F0F10) : const Color(0xFFF8F9FB);
-    final cardBg  = isDark ? const Color(0xFF1A1A1C) : Colors.white;
+    final c = AppColors.of(context);
 
     return ValueListenableBuilder<String>(
       valueListenable: appLanguage,
       builder: (context, lang, _) {
         return Scaffold(
-          backgroundColor: bgColor,
+          backgroundColor: c.background,
           appBar: AppBar(
-            backgroundColor: cardBg,
+            backgroundColor: c.card,
             elevation: 0,
             title: Text(
               lang == 'ru' ? 'Верификация' : 'Верификация',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: isDark ? Colors.white : Colors.black87,
+                color: c.textPrimary,
               ),
             ),
             centerTitle: true,
-            iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+            iconTheme: IconThemeData(color: c.textPrimary),
           ),
           body: _isLoading
-              ? const Center(child: CircularProgressIndicator())
+              ? Center(child: CircularProgressIndicator(color: c.primary))
               : _isChairman
-                  ? _buildChairmanView(lang, isDark, cardBg)
-                  : _buildMasterView(lang, isDark, cardBg),
+                  ? _buildChairmanView(context, lang)
+                  : _buildMasterView(context, lang),
         );
       },
     );
   }
 
   // ── ВИД МАСТЕРА ──────────────────────────────────────────
-  Widget _buildMasterView(String lang, bool isDark, Color cardBg) {
+  Widget _buildMasterView(BuildContext context, String lang) {
+    final c = AppColors.of(context);
+
     if (_verifyStatus == 'verified') {
       return _buildStatusBanner(
         icon   : LucideIcons.badgeCheck,
-        color  : Colors.green,
+        color  : c.success,
         title  : lang == 'ru' ? 'Аккаунт верифицирован' : 'Аккаунт расталды',
         subtitle: lang == 'ru'
             ? 'Ваш профиль подтверждён. Жители могут вас найти.'
@@ -330,7 +319,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
     if (_verifyStatus == 'pending') {
       return _buildStatusBanner(
         icon    : LucideIcons.clock,
-        color   : Colors.orange,
+        color   : c.warning,
         title   : lang == 'ru' ? 'Заявка на проверке' : 'Өтінім тексерілуде',
         subtitle: lang == 'ru'
             ? 'Председатель дома проверит вашу заявку в ближайшее время.'
@@ -345,14 +334,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
           children: [
             _buildStatusBannerInline(
               icon    : LucideIcons.xCircle,
-              color   : Colors.red,
+              color   : c.danger,
               title   : lang == 'ru' ? 'Заявка отклонена' : 'Өтінім қабылданбады',
               subtitle: lang == 'ru'
                   ? 'Попробуйте ещё раз с правильными документами.'
                   : 'Дұрыс құжаттармен қайталап көріңіз.',
             ),
             const SizedBox(height: 20),
-            ..._buildForm(lang, isDark, cardBg),
+            ..._buildForm(context, lang),
           ],
         ),
       );
@@ -362,32 +351,34 @@ class _VerificationScreenState extends State<VerificationScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: _buildForm(lang, isDark, cardBg),
+        children: _buildForm(context, lang),
       ),
     );
   }
 
-  List<Widget> _buildForm(String lang, bool isDark, Color cardBg) {
+  List<Widget> _buildForm(BuildContext context, String lang) {
+    final c = AppColors.of(context);
+
     return [
       // Инфо-баннер
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.blueAccent.withOpacity(0.1),
+          color: c.primary.withOpacity(0.1),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.blueAccent.withOpacity(0.3)),
+          border: Border.all(color: c.primary.withOpacity(0.3)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(LucideIcons.info, color: Colors.blueAccent, size: 18),
+            Icon(LucideIcons.info, color: c.primary, size: 18),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 lang == 'ru'
                     ? 'Верификация позволяет жителям доверять вам. Загрузите документы — председатель дома проверит их.'
                     : 'Верификация тұрғындардың сізге сенуіне мүмкіндік береді. Құжаттарды жүктеңіз.',
-                style: const TextStyle(fontSize: 13, color: Colors.blueAccent),
+                style: TextStyle(fontSize: 13, color: c.primary),
               ),
             ),
           ],
@@ -396,7 +387,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
       const SizedBox(height: 20),
 
       // Специализация
-      _sectionLabel(lang == 'ru' ? 'Специализация' : 'Мамандық', isDark),
+      _sectionLabel(context, lang == 'ru' ? 'Специализация' : 'Мамандық'),
       const SizedBox(height: 8),
       Wrap(
         spacing: 8, runSpacing: 8,
@@ -408,16 +399,16 @@ class _VerificationScreenState extends State<VerificationScreen> {
               duration: const Duration(milliseconds: 180),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: sel ? Colors.blueAccent : (isDark ? const Color(0xFF1A1A1C) : Colors.white),
+                color: sel ? c.primary : c.card,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: sel ? Colors.blueAccent : Colors.grey.withOpacity(0.3),
+                  color: sel ? c.primary : c.textTertiary.withOpacity(0.3),
                 ),
               ),
               child: Text(e.value,
                   style: TextStyle(
                     fontSize: 14, fontWeight: FontWeight.w600,
-                    color: sel ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                    color: sel ? Colors.white : c.textPrimary.withOpacity(0.8),
                   )),
             ),
           );
@@ -426,26 +417,26 @@ class _VerificationScreenState extends State<VerificationScreen> {
       const SizedBox(height: 20),
 
       // Опыт работы
-      _sectionLabel(lang == 'ru' ? 'Лет опыта' : 'Тәжірибе (жыл)', isDark),
+      _sectionLabel(context, lang == 'ru' ? 'Лет опыта' : 'Тәжірибе (жыл)'),
       const SizedBox(height: 8),
       _buildTextField(
+        context,
         value    : _experience,
         hint     : '5',
         icon     : LucideIcons.award,
         keyboard : TextInputType.number,
-        isDark   : isDark,
         onChanged: (v) => _experience = v,
       ),
       const SizedBox(height: 16),
 
       // Описание
-      _sectionLabel(lang == 'ru' ? 'О себе' : 'Өзіңіз туралы', isDark),
+      _sectionLabel(context, lang == 'ru' ? 'О себе' : 'Өзіңіз туралы'),
       const SizedBox(height: 8),
       _buildTextField(
+        context,
         value    : _description,
         hint     : lang == 'ru' ? 'Опишите ваши навыки и опыт...' : 'Дағдыларыңызды сипаттаңыз...',
         icon     : LucideIcons.alignLeft,
-        isDark   : isDark,
         maxLines : 3,
         onChanged: (v) => _description = v,
       ),
@@ -453,14 +444,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
       // Удостоверение личности
       _sectionLabel(
-          '${lang == 'ru' ? 'Удостоверение личности' : 'Жеке куәлік'} *',
-          isDark),
+          context,
+          '${lang == 'ru' ? 'Удостоверение личности' : 'Жеке куәлік'} *'),
       const SizedBox(height: 8),
       _buildPhotoCard(
+        context,
         file    : _idPhoto,
         label   : lang == 'ru' ? 'Фото удостоверения' : 'Куәлік фотосы',
         icon    : LucideIcons.creditCard,
-        isDark  : isDark,
         onTap   : () async {
           final f = await _pickImage(ImageSource.camera);
           if (f != null) setState(() => _idPhoto = f);
@@ -475,14 +466,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
       // Селфи (опционально)
       _sectionLabel(
-          '${lang == 'ru' ? 'Селфи с документом' : 'Құжатпен селфи'} (${lang == 'ru' ? 'необязательно' : 'міндетті емес'})',
-          isDark),
+          context,
+          '${lang == 'ru' ? 'Селфи с документом' : 'Құжатпен селфи'} (${lang == 'ru' ? 'необязательно' : 'міндетті емес'})'),
       const SizedBox(height: 8),
       _buildPhotoCard(
+        context,
         file    : _selfiePhoto,
         label   : lang == 'ru' ? 'Фото лица с документом' : 'Жүзіңіздің фотосы',
         icon    : LucideIcons.user,
-        isDark  : isDark,
         onTap   : () async {
           final f = await _pickImage(ImageSource.camera);
           if (f != null) setState(() => _selfiePhoto = f);
@@ -505,7 +496,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blueAccent,
+            backgroundColor: c.primary,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 0,
           ),
@@ -517,17 +508,19 @@ class _VerificationScreenState extends State<VerificationScreen> {
   }
 
   // ── ВИД ПРЕДСЕДАТЕЛЯ ─────────────────────────────────────
-  Widget _buildChairmanView(String lang, bool isDark, Color cardBg) {
+  Widget _buildChairmanView(BuildContext context, String lang) {
+    final c = AppColors.of(context);
+
     if (_pendingMasters.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.checkCircle, size: 60, color: Colors.green.withOpacity(0.4)),
+            Icon(LucideIcons.checkCircle, size: 60, color: c.success.withOpacity(0.4)),
             const SizedBox(height: 16),
             Text(
               lang == 'ru' ? 'Нет заявок на верификацию' : 'Верификация өтінімдері жоқ',
-              style: const TextStyle(color: Colors.grey, fontSize: 15),
+              style: TextStyle(color: c.textTertiary, fontSize: 15),
             ),
           ],
         ),
@@ -549,110 +542,110 @@ class _VerificationScreenState extends State<VerificationScreen> {
         return _StaggeredEntrance(
           index: i,
           child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: cardBg,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.orange.withOpacity(0.25)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Colors.blueAccent.withOpacity(0.15),
-                    backgroundImage: (avatar?.isNotEmpty == true)
-                        ? NetworkImage(avatar!) : null,
-                    child: (avatar?.isEmpty ?? true)
-                        ? Text(name.isNotEmpty ? name[0] : '?',
-                            style: const TextStyle(
-                                color: Colors.blueAccent, fontWeight: FontWeight.bold))
-                        : null,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 15)),
-                        Text(
-                          _specs[spec] ?? spec,
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ],
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: c.card,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: c.warning.withOpacity(0.25)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: c.primary.withOpacity(0.15),
+                      backgroundImage: (avatar?.isNotEmpty == true)
+                          ? NetworkImage(avatar!) : null,
+                      child: (avatar?.isEmpty ?? true)
+                          ? Text(name.isNotEmpty ? name[0] : '?',
+                              style: TextStyle(
+                                  color: c.primary, fontWeight: FontWeight.bold))
+                          : null,
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 15, color: c.textPrimary)),
+                          Text(
+                            _specs[spec] ?? spec,
+                            style: TextStyle(color: c.textTertiary, fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Text(
-                      lang == 'ru' ? 'Ожидает' : 'Күтуде',
-                      style: const TextStyle(
-                          color: Colors.orange, fontSize: 14, fontWeight: FontWeight.bold),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: c.warning.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        lang == 'ru' ? 'Ожидает' : 'Күтуде',
+                        style: TextStyle(
+                            color: c.warning, fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Фото документов
+                if (item['id_photo_url'] != null) ...[
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      item['id_photo_url'],
+                      height: 120, width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox(),
                     ),
                   ),
                 ],
-              ),
 
-              // Фото документов
-              if (item['id_photo_url'] != null) ...[
-                const SizedBox(height: 12),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Image.network(
-                    item['id_photo_url'],
-                    height: 120, width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox(),
-                  ),
+                const SizedBox(height: 14),
+
+                // Кнопки одобрить/отклонить
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon : Icon(LucideIcons.x, size: 16, color: c.danger),
+                        label: Text(lang == 'ru' ? 'Отклонить' : 'Бас тарту',
+                            style: TextStyle(color: c.danger)),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: c.danger),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () => _reviewMaster(verifId, userId, false),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        icon : const Icon(LucideIcons.check, size: 16, color: Colors.white),
+                        label: Text(lang == 'ru' ? 'Одобрить' : 'Мақұлдау',
+                            style: const TextStyle(color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: c.success,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        onPressed: () => _reviewMaster(verifId, userId, true),
+                      ),
+                    ),
+                  ],
                 ),
               ],
-
-              const SizedBox(height: 14),
-
-              // Кнопки одобрить/отклонить
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon : const Icon(LucideIcons.x, size: 16, color: Colors.red),
-                      label: Text(lang == 'ru' ? 'Отклонить' : 'Бас тарту',
-                          style: const TextStyle(color: Colors.red)),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () => _reviewMaster(verifId, userId, false),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon : const Icon(LucideIcons.check, size: 16, color: Colors.white),
-                      label: Text(lang == 'ru' ? 'Одобрить' : 'Мақұлдау',
-                          style: const TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                      onPressed: () => _reviewMaster(verifId, userId, true),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
           ),
         );
       },
@@ -728,15 +721,17 @@ class _VerificationScreenState extends State<VerificationScreen> {
     );
   }
 
-  Widget _buildPhotoCard({
+  Widget _buildPhotoCard(
+    BuildContext context, {
     required File?    file,
     required String   label,
     required IconData icon,
-    required bool     isDark,
     required VoidCallback  onTap,
     required VoidCallback  onGallery,
     required VoidCallback  onRemove,
   }) {
+    final c = AppColors.of(context);
+
     if (file != null) {
       return Stack(
         children: [
@@ -770,17 +765,17 @@ class _VerificationScreenState extends State<VerificationScreen> {
             child: Container(
               height: 90,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+                color: c.card,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.withOpacity(0.25)),
+                border: Border.all(color: c.textTertiary.withOpacity(0.25)),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(LucideIcons.camera, color: Colors.blueAccent, size: 24),
+                  Icon(LucideIcons.camera, color: c.primary, size: 24),
                   const SizedBox(height: 6),
-                  const Text('Камера',
-                      style: TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text(appLanguage.value == 'ru' ? 'Камера' : 'Камера',
+                      style: TextStyle(fontSize: 14, color: c.textTertiary)),
                 ],
               ),
             ),
@@ -793,17 +788,17 @@ class _VerificationScreenState extends State<VerificationScreen> {
             child: Container(
               height: 90,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF1A1A1C) : Colors.white,
+                color: c.card,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.withOpacity(0.25)),
+                border: Border.all(color: c.textTertiary.withOpacity(0.25)),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(LucideIcons.image, color: Colors.blueAccent, size: 24),
+                  Icon(LucideIcons.image, color: c.primary, size: 24),
                   const SizedBox(height: 6),
-                  const Text('Галерея',
-                      style: TextStyle(fontSize: 14, color: Colors.grey)),
+                  Text(appLanguage.value == 'ru' ? 'Галерея' : 'Галерея',
+                      style: TextStyle(fontSize: 14, color: c.textTertiary)),
                 ],
               ),
             ),
@@ -813,28 +808,30 @@ class _VerificationScreenState extends State<VerificationScreen> {
     );
   }
 
-  Widget _buildTextField({
+  Widget _buildTextField(
+    BuildContext context, {
     required String   value,
     required String   hint,
     required IconData icon,
-    required bool     isDark,
     required ValueChanged<String> onChanged,
     int maxLines = 1,
     TextInputType keyboard = TextInputType.text,
   }) {
+    final c = AppColors.of(context);
+
     return TextFormField(
       initialValue : value,
       maxLines     : maxLines,
       keyboardType : keyboard,
       onChanged    : onChanged,
       style: TextStyle(
-          color: isDark ? Colors.white : Colors.black87, fontSize: 14),
+          color: c.textPrimary, fontSize: 14),
       decoration: InputDecoration(
         hintText  : hint,
-        hintStyle : const TextStyle(color: Colors.grey, fontSize: 13),
-        prefixIcon: Icon(icon, color: Colors.blueAccent, size: 18),
+        hintStyle : TextStyle(color: c.textTertiary, fontSize: 13),
+        prefixIcon: Icon(icon, color: c.primary, size: 18),
         filled    : true,
-        fillColor : isDark ? Colors.white.withOpacity(0.05) : Colors.grey.shade50,
+        fillColor : c.surfaceVariant,
         border    : OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
@@ -842,11 +839,11 @@ class _VerificationScreenState extends State<VerificationScreen> {
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide(
-              color: isDark ? Colors.white.withOpacity(0.1) : Colors.grey.shade200),
+              color: c.textTertiary.withOpacity(0.2)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Colors.blueAccent, width: 1.5),
+          borderSide: BorderSide(color: c.primary, width: 1.5),
         ),
         contentPadding: EdgeInsets.symmetric(
             horizontal: 14, vertical: maxLines > 1 ? 12 : 14),
@@ -854,11 +851,14 @@ class _VerificationScreenState extends State<VerificationScreen> {
     );
   }
 
-  Widget _sectionLabel(String text, bool isDark) => Text(text,
-      style: TextStyle(
-        fontSize: 13, fontWeight: FontWeight.w600,
-        color: isDark ? Colors.white60 : Colors.black54,
-      ));
+  Widget _sectionLabel(BuildContext context, String text) {
+    final c = AppColors.of(context);
+    return Text(text,
+        style: TextStyle(
+          fontSize: 13, fontWeight: FontWeight.w600,
+          color: c.textTertiary,
+        ));
+  }
 }
 
 // ============================================================

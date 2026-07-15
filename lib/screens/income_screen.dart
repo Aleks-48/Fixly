@@ -163,9 +163,9 @@ class _IncomeScreenState extends State<IncomeScreen>
               IconThemeData(color: isDark ? Colors.white : Colors.black87),
           bottom: TabBar(
             controller: _tabCtrl,
-            labelColor: Colors.blueAccent,
+            labelColor: Theme.of(context).colorScheme.primary,
             unselectedLabelColor: Colors.grey,
-            indicatorColor: Colors.blueAccent,
+            indicatorColor: Theme.of(context).colorScheme.primary,
             tabs: [
               Tab(text: lang == 'ru' ? 'Неделя' : 'Апта'),
               Tab(text: lang == 'ru' ? '6 месяцев' : '6 ай'),
@@ -389,7 +389,7 @@ class _IncomeScreenState extends State<IncomeScreen>
                                   fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                   color: isMax
-                                      ? Colors.blueAccent
+                                      ? Theme.of(context).colorScheme.primary
                                       : Colors.grey),
                             ),
                           ),
@@ -399,8 +399,8 @@ class _IncomeScreenState extends State<IncomeScreen>
                           height: pct * 90,
                           decoration: BoxDecoration(
                             color: isMax
-                                ? Colors.blueAccent
-                                : Colors.blueAccent.withOpacity(0.35),
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.primary.withOpacity(0.35),
                             borderRadius: const BorderRadius.vertical(
                                 top: Radius.circular(5)),
                           ),
