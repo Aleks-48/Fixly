@@ -31,8 +31,8 @@ class _BuildingSearchScreenState extends State<BuildingSearchScreen> {
 
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
-    // Задержка 800мс, чтобы не спамить бесплатный сервер OSM
-    _debounce = Timer(const Duration(milliseconds: 800), () {
+    // Задержка 1200мс для соблюдения лимитов OSM (не более 1 запроса в секунду)
+    _debounce = Timer(const Duration(milliseconds: 1200), () {
       if (query.length >= 3) {
         _searchDatabase(query.trim());
       } else {
@@ -67,11 +67,25 @@ class _BuildingSearchScreenState extends State<BuildingSearchScreen> {
     }
   }
 
-  // 2. Бесплатный геокодинг (Поиск по всей карте Казахстана)
+  // 2. Бесплатный геокодинг (Поиск по всей карте)
   Future<void> _searchOpenStreetMap(String query) async {
-    // Ограничиваем поиск Казахстаном (countrycodes=kz)
-    final url = Uri.parse(
-      'https://nominatim.openstreetmap.org/search?q=$query&format=json&addressdetails=1&countrycodes=kz&limit=5'
+    // Добавляем город по умолчанию для повышения точности OSM
+    final String targetCity = 'Кокшетау';
+    final String smartQuery = query.toLowerCase().contains(targetCity.toLowerCase()) 
+        ? query 
+        : '$targetCity, $query';
+
+    // БЕЗОПАСНОЕ формирование URL: Uri.https автоматически закодирует кириллицу и пробелы!
+    final url = Uri.https(
+      'nominatim.openstreetmap.org',
+      '/search',
+      {
+        'q': smartQuery,
+        'format': 'json',
+        'addressdetails': '1',
+        'countrycodes': 'kz',
+        'limit': '5',
+      },
     );
 
     try {
@@ -85,9 +99,11 @@ class _BuildingSearchScreenState extends State<BuildingSearchScreen> {
         setState(() {
           _osmResults = json.decode(response.body);
         });
+      } else {
+        debugPrint("Ошибка OSM: статус ${response.statusCode}. Тело: ${response.body}");
       }
     } catch (e) {
-      debugPrint("Ошибка OSM: $e");
+      debugPrint("Ошибка сети при запросе к OSM: $e");
     }
   }
 
@@ -241,13 +257,7 @@ class _BuildingSearchScreenState extends State<BuildingSearchScreen> {
       );
     }
 
-    // Если ввели 3+ символа, но ничего не нашли — ни в базе Fixly, ни в OSM.
-    // ВАЖНО: раньше это был тупик — юзер видел "Адрес не найден" и не мог
-    // продвинуться дальше, если бесплатный Nominatim не ответил (таймаут,
-    // рейт-лимит, странный формат запроса — для Кокшетау, судя по всему,
-    // именно так и происходит). Добавили ручной ввод: дом создаётся по
-    // тексту, который ввёл юзер, без геокодинга (lat/lng — null,
-    // ChairmanBuildingSelectionScreen._createAndAttach уже это умеет).
+    // Если ввели 3+ символа, но ничего не нашли
     if (_searchController.text.trim().length >= 3) {
       return Center(
         child: Padding(

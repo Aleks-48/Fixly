@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb; // Добавлен импорт для поддержки Web
+import 'package:flutter/foundation.dart' show kIsWeb; // Поддержка Web
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:google_sign_in_platform_interface/google_sign_in_platform_interface.dart'; // Интерфейс для каста
+import 'package:google_sign_in_web/google_sign_in_web.dart' as google_web; // Пакет для рендеринга кнопки на Web
 import 'package:fixly_app/main.dart';
 import 'package:fixly_app/screens/login_page.dart';
 import 'package:fixly_app/screens/main_wrapper.dart';
-import 'package:fixly_app/screens/osi_selection_screen.dart'; // Добавлен импорт экрана выбора ОСИ
+import 'package:fixly_app/screens/osi_selection_screen.dart'; // Выбор ОСИ
 import 'package:lucide_icons/lucide_icons.dart';
 
 // ============================================================
@@ -43,11 +45,60 @@ class _RegisterPageState extends State<RegisterPage>
   late List<Animation<double>> _fadeAnims;
   late List<Animation<Offset>> _slideAnims;
 
+  // Константа Web Client ID
+  static const _webClientId =
+      '700103731510-je08vr3c7k6g693pbb1kd9mrdlr5v179.apps.googleusercontent.com';
+
+  // Инициализация Google Sign In
+  late final GoogleSignIn _googleSignIn;
+
   @override
   void initState() {
     super.initState();
     _setupAnimations();
     _animCtrl.forward();
+
+    // Настройка Google Sign In
+    _googleSignIn = GoogleSignIn(
+      clientId: kIsWeb ? _webClientId : null,
+      serverClientId: !kIsWeb ? _webClientId : null,
+      scopes: const ['email', 'profile'],
+    );
+
+    // Слушатель для Web-версии авторизации (поток ответов от кнопки)
+    if (kIsWeb) {
+      _googleSignIn.onCurrentUserChanged.listen((GoogleSignInAccount? account) async {
+        if (account != null) {
+          setState(() {
+            _isGoogleLoading = true;
+            _errorMessage = null;
+          });
+          try {
+            final googleAuth = await account.authentication;
+            if (googleAuth.idToken == null) {
+              throw StateError('Google did not return an ID token');
+            }
+            final response = await _supabase.auth.signInWithIdToken(
+              provider: OAuthProvider.google,
+              idToken: googleAuth.idToken!,
+              accessToken: googleAuth.accessToken,
+            );
+            final user = response.user;
+            if (user == null) throw StateError('Supabase did not create a session');
+            await _completeGoogleSignUp(user);
+          } on AuthException catch (e) {
+            _showError(_mapAuthError(e.message));
+          } catch (e) {
+            debugPrint('Web Google Sign-Up error: $e');
+            _showError(appLanguage.value == 'ru'
+                ? 'Ошибка входа через Google. Проверьте настройки.'
+                : 'Google арқылы кіру қатесі. Параметрлерді тексеріңіз.');
+          } finally {
+            if (mounted) setState(() => _isGoogleLoading = false);
+          }
+        }
+      });
+    }
   }
 
   void _setupAnimations() {
@@ -99,7 +150,6 @@ class _RegisterPageState extends State<RegisterPage>
       final String userType =
           _selectedRole == 'master' ? 'contractor' : 'resident';
 
-      // РЕШЕНИЕ: используем userMetadata напрямую для совместимости с v1.x
       final res = await _supabase.auth.signUp(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text.trim(),
@@ -113,22 +163,18 @@ class _RegisterPageState extends State<RegisterPage>
       final user = res.user;
       if (user == null) throw Exception('User is null after signUp');
 
-      // Делаем upsert только если сессия уже активна (email-подтверждение отключено).
-      // Если сессия пустая (нужно подтверждение), этот шаг пропускается, так как у неавторизованного юзера
-      // нет прав на запись по RLS, а триггер в БД уже успешно создал запись с правильными метаданными.
       if (res.session != null) {
         await _supabase.from('profiles').upsert({
           'id': user.id,
           'full_name': _nameCtrl.text.trim(),
-          'role': _selectedRole, // Сохраняется выбранная роль (в т.ч. 'osi')
-          'user_type': userType, // Явная передача типа
+          'role': _selectedRole,
+          'user_type': userType,
           'email': _emailCtrl.text.trim(),
           'created_at': DateTime.now().toIso8601String(),
         });
       }
 
       if (mounted) {
-        // Если Supabase сразу авторизует (без подтверждения почты) — кидаем на экран выбора ОСИ
         if (res.session != null) {
           Navigator.pushAndRemoveUntil(
             context,
@@ -136,7 +182,6 @@ class _RegisterPageState extends State<RegisterPage>
             (_) => false,
           );
         } else {
-          // Если требуется подтверждение по почте, показываем окно
           _showSuccess();
         }
       }
@@ -151,25 +196,15 @@ class _RegisterPageState extends State<RegisterPage>
     }
   }
 
-  // ── GOOGLE SIGN-UP ────────────────────────────────────────
-  Future<void> _signUpWithGoogle() async {
+  // ── GOOGLE SIGN-UP (ДЛЯ МОБИЛЬНЫХ УСТРОЙСТВ) ──────────────────────────────────
+  Future<void> _signUpWithGoogleMobile() async {
     setState(() {
       _isGoogleLoading = true;
       _errorMessage = null;
     });
 
     try {
-      const webClientId =
-          '700103731510-je08vr3c7k6g693pbb1kd9mrdlr5v179.apps.googleusercontent.com';
-      
-      // Настройка инициализации для Web и Mobile-платформ
-      final googleSignIn = GoogleSignIn(
-        clientId: kIsWeb ? webClientId : null,         // Обязательно для Flutter Web
-        serverClientId: !kIsWeb ? webClientId : null, // Используется для мобильных ОС
-        scopes: const ['email', 'profile'],
-      );
-      
-      final googleUser = await googleSignIn.signIn();
+      final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
         if (mounted) setState(() => _isGoogleLoading = false);
         return;
@@ -686,50 +721,51 @@ class _RegisterPageState extends State<RegisterPage>
 
                     const SizedBox(height: 18),
 
-                    // ── GOOGLE ────────────────────────────────
+                    // ── GOOGLE КНОПКА (УСЛОВНЫЙ РЕНДЕРИНГ WEB/MOBILE) ─────────────────
                     _animated(
                       6,
                       child: SizedBox(
                         width: double.infinity,
                         height: 56,
-                        child: OutlinedButton(
-                          onPressed:
-                              _isGoogleLoading ? null : _signUpWithGoogle,
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                                color: Color(0xFF1E2A45), width: 1.5),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16)),
-                            backgroundColor: const Color(0xFF0F1625),
-                          ),
-                          child: _isGoogleLoading
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2.5))
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 22,
-                                      height: 22,
-                                      child: CustomPaint(
-                                          painter: _GoogleIconPainter()),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      lang == 'ru'
-                                          ? 'Регистрация через Google'
-                                          : 'Google арқылы тіркелу',
-                                      style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 15),
-                                    ),
-                                  ],
+                        child: kIsWeb
+                            ? (GoogleSignInPlatform.instance as google_web.GoogleSignInPlugin).renderButton() // Рендерим через плагин-инстанс
+                            : OutlinedButton(          // На Mobile остается кастомная кнопка
+                                onPressed: _isGoogleLoading ? null : _signUpWithGoogleMobile,
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(
+                                      color: Color(0xFF1E2A45), width: 1.5),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16)),
+                                  backgroundColor: const Color(0xFF0F1625),
                                 ),
-                        ),
+                                child: _isGoogleLoading
+                                    ? const SizedBox(
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2.5))
+                                    : Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          SizedBox(
+                                            width: 22,
+                                            height: 22,
+                                            child: CustomPaint(
+                                                painter: _GoogleIconPainter()),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Text(
+                                            lang == 'ru'
+                                                ? 'Регистрация через Google'
+                                                : 'Google арқылы тіркелу',
+                                            style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15),
+                                          ),
+                                        ],
+                                      ),
+                              ),
                       ),
                     ),
 

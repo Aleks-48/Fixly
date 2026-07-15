@@ -49,6 +49,7 @@ dependencies:
   jitsi_meet_flutter_sdk: ^11.6.0
   permission_handler: ^11.3.1
   google_sign_in: ^6.2.1 # РЕКОМЕНДУЮ эту версию, она стабильнее для Supabase
+  google_sign_in_web: ^0.12.4 # Добавьте этот пакет напрямую
   signature: ^6.3.0
   sign_in_with_apple: ^6.1.1
   crypto: ^3.0.7
